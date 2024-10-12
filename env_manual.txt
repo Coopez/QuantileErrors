@@ -1,0 +1,7 @@
+### What is probably required
+
+numpy
+pytorch
+pandas
+neptune
+pytorch-lattice
