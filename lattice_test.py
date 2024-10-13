@@ -93,13 +93,13 @@ y = valid
 quantiles = torch.rand((_BATCHSIZE,len(y),1))
 # Data
 features = [NumericalFeature("irradiance", X["irradiance"].values), NumericalFeature("quantiles", quantiles,monotonicity=enums.Monotonicity.INCREASING)]
-data = CalibratedDataset(X, y, quantiles, features, window_size=4,horizon_size=1, batch_size=_BATCHSIZE)
-
+data = CalibratedDataset(X, y, features, window_size=4,horizon_size=1,quantiles=quantiles)
+dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=True)
 # Model
 model = CalibratedLatticeLayer(features, lattice_type='rtl')
 
 # Forward pass
-for batch in data:
+for batch in dataloader:
     training_data,quantile, target = batch
     x = torch.stack((training_data,quantile),dim=-1)
     output = model(x)
