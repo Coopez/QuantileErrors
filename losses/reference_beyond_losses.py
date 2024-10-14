@@ -1,12 +1,15 @@
 import torch
 
 """
-Loss functions for quantile regression adapted from:
+Loss functions for quantile regression copied from:
 https://github.com/YoungseogChung/calibrated-quantile-uq/tree/master
 Beyond Pinball Loss: Quantile Methods for Calibrated Uncertainty Quantification
 
-"""
 
+THIS IS NOT USED AT THE MOMENT. INTERVAL LOSS MAYBE USEFUL AS METRIC, BUT CALIBRATION LOSS IS JUST FOR REFERENCE
+
+"""
+raise Exception("DO NOT USE THIS FILE")
 
 def interval_loss(model, y, x, q, device, args):
     """

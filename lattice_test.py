@@ -7,17 +7,17 @@ import pytorch_lattice.enums as enums
 import numpy as np
 import pandas as pd
 from res.data import data_import
-_RANDOM_SEED = 42
+
 from models.Calibrated_lattice_model import CalibratedLatticeModel
 from layers.calibrated_lattice_layer import CalibratedLatticeLayer
 from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
 
-
+from losses.qr_loss import sqr_loss
 # Examples time series
 
 _BATCHSIZE = 16
-
+_RANDOM_SEED = 42
 
 train,train_target,valid,valid_target,_,_ = data_import()
 train = train[:,11]
@@ -38,7 +38,7 @@ dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=Tr
 model = CalibratedLatticeModel(features, output_min=0, output_max=1,lattice_type='rtl', num_layers=1, output_size=1)
 # Forward pass
 # Define loss function and optimizer
-from models.qr_model import sqr_loss
+
 criterion = sqr_loss
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
@@ -56,7 +56,7 @@ for epoch in range(epochs):
         output = model(x.squeeze())
         
         # Compute loss
-        loss = criterion(output.unsqueeze(-1), target, quantile)
+        loss = criterion(output.unsqueeze(-1), target, quantile,type='pinball')
         
         # Backward pass and optimization
         optimizer.zero_grad()
