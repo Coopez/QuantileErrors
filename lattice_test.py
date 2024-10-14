@@ -84,25 +84,50 @@ _BATCHSIZE = 16
 
 train,train_target,valid,valid_target,_,_ = data_import()
 train = train[:,11]
-valid = valid[:,11]
+#valid = valid[:,11]
+
+quantiles = np.random.uniform(0,1,len(train))
+dset = {"irradiance":train,"quantiles":quantiles}
+X = pd.DataFrame(dset)
+y = train_target
 
 
-X = pd.DataFrame(train, columns=["irradiance"])
-y = valid
-
-quantiles = torch.rand((_BATCHSIZE,len(y),1))
 # Data
 features = [NumericalFeature("irradiance", X["irradiance"].values), NumericalFeature("quantiles", quantiles,monotonicity=enums.Monotonicity.INCREASING)]
-data = CalibratedDataset(X, y, features, window_size=4,horizon_size=1,quantiles=quantiles)
+data = CalibratedDataset(X, y, features, window_size=1,horizon_size=1) # window can only be 1 because of the lattice.
 dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=True)
 # Model
 model = CalibratedLatticeLayer(features, lattice_type='rtl')
 
 # Forward pass
-for batch in dataloader:
-    training_data,quantile, target = batch
-    x = torch.stack((training_data,quantile),dim=-1)
-    output = model(x)
+# Define loss function and optimizer
+from res.qr_model import sqr_loss
+criterion = sqr_loss
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+# Training loop
+model.train()
+
+epochs = 50
+for epoch in range(epochs):
+    train_losses = []
+    for batch in dataloader:
+        training_data, quantile, target = batch
+        x = torch.cat((training_data, quantile), dim=-1)
+        
+        # Forward pass
+        output = model(x.squeeze())
+        
+        # Compute loss
+        loss = criterion(output.unsqueeze(-1), target, quantile)
+        
+        # Backward pass and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        train_losses.append(loss.item())
+    print(f"Epoch {epoch+1}/{epochs}, Loss: {np.mean(train_losses)}")
+
 
 
 
