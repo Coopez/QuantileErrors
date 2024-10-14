@@ -8,74 +8,11 @@ import numpy as np
 import pandas as pd
 from res.data import data_import
 _RANDOM_SEED = 42
-from calibrated_lattice_layer import CalibratedLatticeLayer, CalibratedDataset
+from models.Calibrated_lattice_model import CalibratedLatticeModel
+from layers.calibrated_lattice_layer import CalibratedLatticeLayer
+from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
-class LatticeNet(nn.Module):
-    """
-    LatticeNet is a neural network module that utilizes lattice layers for 
-    learning monotonic functions. It consists of a numerical calibrator and 
-    a lattice ensemble.
-    Attributes:
-        batch_size (int): The size of the batches used during training.
-        input_size (int): The size of the input features.
-        output_size (int): The size of the output features.
-        num_lattices (int): The number of lattices used in the lattice ensemble.
-        horizon_size (int): The horizon size for the lattice ensemble.
-        calibrator (llayers.NumericalCalibrator): A numerical calibrator layer.
-        lattice_ensemble (llayers.RTL): A lattice ensemble layer.
-    Methods:
-        forward(x):
-            Passes the input through the calibrator and lattice ensemble layers.
-            Args:
-                x (torch.Tensor): The input tensor.
-            Returns:
-                torch.Tensor: The output tensor after passing through the layers.
-    """
-    def __init__(self, batch_size, input_size, output_size, num_lattices, horizon_size,control):
-        super(LatticeNet, self).__init__()
-         
-        self.batch_size = batch_size
-        self.input_size = input_size
-        self.output_size = output_size
-        self.num_lattices = num_lattices
-        self.horizon_size = horizon_size
-        self.control = control
-        
-        
-        self.control_calibrator = llayers.NumericalCalibrator(
-            input_keypoints=np.linspace(0., 1., num=5),
-            output_min=0.0, output_max = 1.0,
-            monotonicity = enums.Monotonicity.INCREASING,
-            kernel_init= enums.NumericalCalibratorInit.EQUAL_HEIGHTS
-            
-              )
-        self.calibrator = llayers.NumericalCalibrator(
-            input_keypoints=np.linspace(0., 1., num=5),
-            output_min=0.0, output_max = 1.0,
-            monotonicity = None,
-            kernel_init= enums.NumericalCalibratorInit.EQUAL_HEIGHTS
-        )
 
-
-
-        #self.lattice = pyl.Lattice(input_size, output_size, num_lattices, horizon_size)
-        self.lattice_ensemble = llayers.RTL(
-            monotonicities = [enums.Monotonicity.INCREASING]*input_size,
-            num_lattices = 1,
-            lattice_rank= horizon_size,
-            lattice_size = output_size,
-            output_min = 0.0,
-            output_max = 1.0,
-            kernel_init = enums.LatticeInit.LINEAR,
-            interpolation=enums.Interpolation.HYPERCUBE,
-            random_seed=_RANDOM_SEED
-        )
-    def forward(self, x):
-        x = self.calibrator(x)
-        x = self.lattice_ensemble(x)
-
-        return x
-    
 
 # Examples time series
 
@@ -97,11 +34,11 @@ features = [NumericalFeature("irradiance", X["irradiance"].values), NumericalFea
 data = CalibratedDataset(X, y, features, window_size=1,horizon_size=1) # window can only be 1 because of the lattice.
 dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=True)
 # Model
-model = CalibratedLatticeLayer(features, lattice_type='rtl')
-
+#model = CalibratedLatticeLayer(features, lattice_type='rtl')
+model = CalibratedLatticeModel(features, output_min=0, output_max=1,lattice_type='rtl', num_layers=1, output_size=1)
 # Forward pass
 # Define loss function and optimizer
-from res.qr_model import sqr_loss
+from models.qr_model import sqr_loss
 criterion = sqr_loss
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 

@@ -1,2 +1,7 @@
 __pycache__
 *.pth
+.neptune
+STRIPE-MAIN
+data
+example.py
+kernel_reg.py

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from qr_model import SQR_LSTM, sqr_loss
-
+from models.qr_model import SQR_LSTM
+from losses.qr_loss import sqr_loss
 # Examples time series
 
 training_data = torch.rand(10, 10, 1).type(torch.float32)
