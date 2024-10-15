@@ -32,8 +32,8 @@ class CalibratedDataset(torch.utils.data.Dataset):
         self.X.drop(drop_features, inplace=True)
         self.quantiles = self.X.pop("quantiles") if "quantiles" in self.X.columns else None
 
-        self.data = torch.from_numpy(self.X.values).double() #.to(torch.float32)
-        self.targets = torch.from_numpy(self.y)[:, None].double()#.to(torch.float32)
+        self.data = torch.from_numpy(self.X.values).double() #.cuda() #.to(torch.float32)
+        self.targets = torch.from_numpy(self.y)[:, None].double()#.cuda()#.to(torch.float32)
 
     def __len__(self):
         return len(self.X) - self.window_size - self.horizon_size + 1
@@ -45,6 +45,6 @@ class CalibratedDataset(torch.utils.data.Dataset):
         y = self.targets[idx + self.window_size : idx + self.window_size + self.horizon_size]
         if self.quantiles is not None:
             q = self.quantiles[idx + self.window_size].repeat(self.window_size)
-            q = torch.from_numpy(q)[:, None].double()#.to(torch.float32)
+            q = torch.from_numpy(q)[:, None].double()#.cuda()#.to(torch.float32)
             return [x, q, y]
         return [x, y]

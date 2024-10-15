@@ -1,4 +1,8 @@
 import torch
+# device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
+# torch.set_default_device(device)
+#TODO it seems like overarching to cuda calls do not touch subcomponents of methods with sparse tensors in pytorch 2.4.
+# May need to export all relevant functions and do a manual device assign for gpu support
 
 import pytorch_lattice.enums as enums
 
@@ -12,6 +16,7 @@ from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
 
 from losses.qr_loss import sqr_loss
+
 
 
 # Hyperparameters
@@ -80,7 +85,7 @@ TODO
 DONE - Hyperparameter support
 - add Data Normalization
 - Debugging monotonocity with calibration and layer layout
-- GPU support
+- GPU support  - ISSUE
 - SQR integration
 - Validation
 - Test
