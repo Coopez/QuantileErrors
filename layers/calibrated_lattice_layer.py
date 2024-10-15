@@ -8,8 +8,9 @@ from pytorch_lattice.enums import (
     Interpolation,
     LatticeInit,
     Monotonicity,
+    NumericalCalibratorInit,
 )
-from pytorch_lattice.layers import Lattice
+from pytorch_lattice.layers import Lattice, NumericalCalibrator
 from pytorch_lattice.utils.models import (
     calibrate_and_stack,
     initialize_feature_calibrators,
@@ -63,15 +64,16 @@ class CalibratedLatticeLayer(ConstrainedModule):
 
     def __init__(
         self,
-        features: list[Union[NumericalFeature, CategoricalFeature]],
+        monotonicities: list[Monotonicity],
         clip_inputs: bool = True,
         output_min: Optional[float] = None,
         output_max: Optional[float] = None,
         kernel_init: LatticeInit = LatticeInit.LINEAR,
         interpolation: Interpolation = Interpolation.HYPERCUBE,
         output_calibration_num_keypoints: Optional[int] = None,
-        lattice_type: str = 'lattice',
-        output_size: int = 1,
+        output_size: Optional[int] = None,
+        input_dim_per_lattice: int = 1,
+        num_lattice: int = 1,
     ) -> None:
         """Initializes an instance of `CalibratedLattice`.
 
@@ -94,62 +96,46 @@ class CalibratedLatticeLayer(ConstrainedModule):
         """
         super().__init__()
 
-        self.features = features
         self.clip_inputs = clip_inputs
         self.output_min = output_min
         self.output_max = output_max
         self.kernel_init = kernel_init
         self.interpolation = interpolation
-        self.lattice_type = lattice_type
         self.output_calibration_num_keypoints = output_calibration_num_keypoints
-        self.monotonicities = initialize_monotonicities(features)
-        self.calibrators = initialize_feature_calibrators(
-            features=features,
-            output_min=0,
-            output_max=[feature.lattice_size - 1 for feature in features],
-        )
+        self.monotonicities = monotonicities
         self.output_size = output_size
-        if lattice_type == 'lattice':
-            self.lattice = Lattice(
-                lattice_sizes=[feature.lattice_size for feature in features],
-                monotonicities=self.monotonicities,
-                clip_inputs=self.clip_inputs,
-                output_min=self.output_min,
-                output_max=self.output_max,
-                interpolation=interpolation,
-                kernel_init=kernel_init,
-            )
-        elif lattice_type == 'rtl':
-            self.lattice = RTL(
-                num_lattices= len(features),
-                lattice_rank=1,
-                monotonicities=self.monotonicities,
-                clip_inputs=self.clip_inputs,
-                output_min=self.output_min,
-                output_max=self.output_max,
-                interpolation=interpolation,
-                kernel_init=kernel_init,
-            )
-        else:
-            raise ValueError(f"Unknown lattice type: {lattice_type}")
-        # self.lattice = Lattice(
-        #     lattice_sizes=[feature.lattice_size for feature in features],
-        #     monotonicities=self.monotonicities,
-        #     clip_inputs=self.clip_inputs,
-        #     output_min=self.output_min,
-        #     output_max=self.output_max,
-        #     interpolation=interpolation,
-        #     kernel_init=kernel_init,
-        # )
-
-        self.output_calibrator = initialize_output_calibrator(
-            output_calibration_num_keypoints=output_calibration_num_keypoints,
-            monotonic=not all(m is None for m in self.monotonicities),
-            output_min=output_min,
-            output_max=output_max,
+    
+        self.lattice = RTL(
+            num_lattices= num_lattice,
+            lattice_rank=input_dim_per_lattice,
+            monotonicities=self.monotonicities,
+            clip_inputs=self.clip_inputs,
+            output_min=self.output_min,
+            output_max=self.output_max,
+            interpolation=interpolation,
+            kernel_init=kernel_init,
         )
-
-        self.layer_output = Linear(len(features), self.output_size,self.monotonicities)
+        self.output_monotonicties = self.lattice.output_monotonicities()
+        if self.output_calibration_num_keypoints is not None:
+            output_calibrators = {}
+            for i in range(num_lattice):
+                output_calibrators[f"calibrator_{i}"] = NumericalCalibrator(
+                    input_keypoints=np.linspace(0.0, 1.0, num=self.output_calibration_num_keypoints),
+                    missing_input_value=None,
+                    output_min=output_min,
+                    output_max=output_max,
+                    monotonicity=self.output_monotonicties[i],
+                    kernel_init=NumericalCalibratorInit.EQUAL_HEIGHTS,
+                )
+            self.output_calibrator = torch.nn.ModuleDict(output_calibrators)
+        # self.output_calibrator = initialize_output_calibrator(
+        #     output_calibration_num_keypoints=output_calibration_num_keypoints,
+        #     monotonic=not all(m is None for m in self.monotonicities),
+        #     output_min=output_min,
+        #     output_max=output_max,
+        # )
+        if self.output_size is not None:
+            self.layer_output = Linear(num_lattice, self.output_size, self.output_monotonicties)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Runs an input through the network to produce a calibrated lattice output.
@@ -160,11 +146,13 @@ class CalibratedLatticeLayer(ConstrainedModule):
         Returns:
             torch.Tensor of shape `(batch_size, 1)` containing the model output result.
         """
-        result = calibrate_and_stack(x, self.calibrators)
-        result = self.lattice(result)
-        if self.output_calibrator is not None:
-            result = self.output_calibrator(result)
-        result = self.layer_output(result)
+        #result = calibrate_and_stack(x, self.calibrators)
+        result = self.lattice(x)
+        if self.output_calibration_num_keypoints is not None:
+            result= calibrate_and_stack(result, self.output_calibrator)
+            #result = self.output_calibrator(result)
+        if self.output_size is not None:
+            result = self.layer_output(result)
         return result
 
     @torch.no_grad()

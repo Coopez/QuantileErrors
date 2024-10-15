@@ -11,7 +11,13 @@ from pytorch_lattice.enums import (
     Interpolation,
     LatticeInit,
 )
+import warnings
 
+from pytorch_lattice.utils.models import (
+    calibrate_and_stack,
+    initialize_feature_calibrators,
+    initialize_monotonicities,
+)
 class CalibratedLatticeModel(nn.Module):
     """
     A PyTorch module that implements a calibrated lattice model with multiple layers.
@@ -41,43 +47,59 @@ class CalibratedLatticeModel(nn.Module):
         output_max: Optional[float] = None,
         kernel_init: LatticeInit = LatticeInit.LINEAR,
         interpolation: Interpolation = Interpolation.HYPERCUBE,
-        output_calibration_num_keypoints: Optional[int] = None,
-        lattice_type: str = 'lattice',
         num_layers: int = 1,
+        input_dim_per_lattice: int = 1,
+        num_lattice_first_layer: int = 1,
         output_size: int = 1,
+        calibration_keypoints: int = 5,
     ) -> None:
         super().__init__()
+        _decrease_factor = 2 # hardcoded for now - decreases the number of lattices in each layer
+        self.features = features
+        # grabbed from layers/calibrated_lattice_layer.py
+        self.monotonicities = initialize_monotonicities(features)
+        self.calibrators = initialize_feature_calibrators(
+            features=features,
+            output_min=0,
+            output_max=[feature.lattice_size - 1 for feature in features],
+        )
+        self.input_dim_per_lattice = input_dim_per_lattice
         self.lattice_layers = []
-        out = int(len(features)/2)
+        layer_size = num_lattice_first_layer
+
+        # Construct lattice layers
         for i in range(num_layers-1):
             # need to stack layers
-            if out > output_size:
-                lattice_layer = CalibratedLatticeLayer(
-                    features=features,
-                    clip_inputs=clip_inputs,
-                    output_min=output_min,
-                    output_max=output_max,
-                    kernel_init=kernel_init,
-                    interpolation=interpolation,
-                    output_calibration_num_keypoints=output_calibration_num_keypoints,
-                    lattice_type=lattice_type,
-                    output_size=int(len(features)/2),
-                )
-                out = int(out/2)
-                self.lattice_layers.append(lattice_layer)
-            else:
-                break
-        
-        self.lattice_layers.append(
-            CalibratedLatticeLayer(
-                features=features,
+            lattice_layer = CalibratedLatticeLayer(
+                monotonicities = self.monotonicities,
                 clip_inputs=clip_inputs,
                 output_min=output_min,
                 output_max=output_max,
                 kernel_init=kernel_init,
                 interpolation=interpolation,
-                output_calibration_num_keypoints=output_calibration_num_keypoints,
-                lattice_type=lattice_type,
+                input_dim_per_lattice = self.input_dim_per_lattice,
+                num_lattice= layer_size,
+                output_calibration_num_keypoints=calibration_keypoints,
+            )
+            layer_size = int(layer_size/_decrease_factor)
+            
+            self.input_dim_per_lattice = _decrease_factor * layer_size
+            self.lattice_layers.append(lattice_layer)
+            self.monotonicities = lattice_layer.lattice.output_monotonicities()
+
+        # Last Lattice Layer
+        self.lattice_layers.append(
+            CalibratedLatticeLayer(
+                monotonicities = self.monotonicities,
+                clip_inputs=clip_inputs,
+                output_min=output_min,
+                output_max=output_max,
+                kernel_init=kernel_init,
+                interpolation=interpolation,
+                input_dim_per_lattice = self.input_dim_per_lattice,
+                num_lattice= layer_size,
+                output_calibration_num_keypoints=calibration_keypoints,
+                # output specific parameters
                 output_size=output_size,
             )
         )
@@ -91,7 +113,7 @@ class CalibratedLatticeModel(nn.Module):
         Returns:
             torch.Tensor: Output tensor after passing through all lattice layers.
         """
-
+        x = calibrate_and_stack(x, self.calibrators)
         for lattice_layer in self.lattice_layers: #TODO: Does this need to be in a loop?
             x = lattice_layer(x)
         return x

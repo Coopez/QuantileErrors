@@ -1,7 +1,5 @@
 import torch
-import torch.nn as nn
 
-import pytorch_lattice.layers as llayers
 import pytorch_lattice.enums as enums
 
 import numpy as np
@@ -9,15 +7,23 @@ import pandas as pd
 from res.data import data_import
 
 from models.Calibrated_lattice_model import CalibratedLatticeModel
-from layers.calibrated_lattice_layer import CalibratedLatticeLayer
+
 from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
 
 from losses.qr_loss import sqr_loss
-# Examples time series
+
+
+# Hyperparameters
 
 _BATCHSIZE = 16
 _RANDOM_SEED = 42
+_NUM_LAYERS = 1 # + 1 for the output layer. Final layer number is num_layers + 1
+_NUM_KEYPOINTS = 5
+_INPUT_DIM_LATTICE_FIRST_LAYER = 1
+_NUM_LATTICE_FIRST_LAYER = 2
+
+
 
 train,train_target,valid,valid_target,_,_ = data_import()
 train = train[:,11]
@@ -30,12 +36,12 @@ y = train_target
 
 
 # Data
-features = [NumericalFeature("irradiance", X["irradiance"].values), NumericalFeature("quantiles", quantiles,monotonicity=enums.Monotonicity.INCREASING)]
+features = [NumericalFeature("irradiance", X["irradiance"].values, num_keypoints=_NUM_KEYPOINTS), NumericalFeature("quantiles", quantiles,num_keypoints=_NUM_KEYPOINTS, monotonicity=enums.Monotonicity.INCREASING)]
 data = CalibratedDataset(X, y, features, window_size=1,horizon_size=1) # window can only be 1 because of the lattice.
 dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=True)
 # Model
-#model = CalibratedLatticeLayer(features, lattice_type='rtl')
-model = CalibratedLatticeModel(features, output_min=0, output_max=1,lattice_type='rtl', num_layers=1, output_size=1)
+
+model = CalibratedLatticeModel(features, output_min=0, output_max=1, num_layers=_NUM_LAYERS, output_size=1, input_dim_per_lattice = _INPUT_DIM_LATTICE_FIRST_LAYER, num_lattice_first_layer = _NUM_LATTICE_FIRST_LAYER, calibration_keypoints = _NUM_KEYPOINTS)
 # Forward pass
 # Define loss function and optimizer
 
@@ -70,10 +76,15 @@ for epoch in range(epochs):
 
 
 """
-1. quantiles are a variable which needs monotonous control
-2. rest not
-3. variables mayhaps needs headers via pandas
-
-3 every variables needs to be embedded in the lattice seperately. 
+TODO
+DONE - Hyperparameter support
+- add Data Normalization
+- Debugging monotonocity with calibration and layer layout
+- GPU support
+- SQR integration
+- Validation
+- Test
+- Neptune
+- Sky cam model&data integration
 
 """
