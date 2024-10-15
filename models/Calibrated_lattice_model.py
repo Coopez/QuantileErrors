@@ -86,7 +86,6 @@ class CalibratedLatticeModel(nn.Module):
             self.input_dim_per_lattice = _decrease_factor * layer_size
             self.lattice_layers.append(lattice_layer)
             self.monotonicities = lattice_layer.lattice.output_monotonicities()
-
         # Last Lattice Layer
         self.lattice_layers.append(
             CalibratedLatticeLayer(

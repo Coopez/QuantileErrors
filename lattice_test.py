@@ -23,10 +23,10 @@ from losses.qr_loss import sqr_loss
 
 _BATCHSIZE = 16
 _RANDOM_SEED = 42
-_NUM_LAYERS = 1 # + 1 for the output layer. Final layer number is num_layers + 1
+_NUM_LAYERS = 1 
 _NUM_KEYPOINTS = 5
 _INPUT_DIM_LATTICE_FIRST_LAYER = 1
-_NUM_LATTICE_FIRST_LAYER = 2
+_NUM_LATTICE_FIRST_LAYER = 4
 
 
 
@@ -81,19 +81,3 @@ for epoch in range(epochs):
     print(f"Epoch {epoch+1}/{epochs}, Loss: {np.mean(train_losses)}")
 
 
-
-
-
-"""
-TODO
-DONE - Hyperparameter support
-DONE - add Data Normalization 
-- Debugging monotonocity with calibration and layer layout
-ISSUE - GPU support  
-- SQR integration
-- Validation
-- Test
-- Neptune
-- Sky cam model&data integration
-
-"""
