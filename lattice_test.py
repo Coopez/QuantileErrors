@@ -33,6 +33,10 @@ _NUM_LATTICE_FIRST_LAYER = 2
 train,train_target,valid,valid_target,_,_ = data_import()
 train = train[:,11]
 #valid = valid[:,11]
+#
+# normalize train target real quick
+train_target = (train_target - np.min(train_target))/(np.max(train_target) - np.min(train_target))
+
 
 quantiles = np.random.uniform(0,1,len(train))
 dset = {"irradiance":train,"quantiles":quantiles}
@@ -83,9 +87,9 @@ for epoch in range(epochs):
 """
 TODO
 DONE - Hyperparameter support
-- add Data Normalization
+DONE - add Data Normalization 
 - Debugging monotonocity with calibration and layer layout
-- GPU support  - ISSUE
+ISSUE - GPU support  
 - SQR integration
 - Validation
 - Test
