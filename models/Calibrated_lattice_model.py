@@ -117,3 +117,45 @@ class CalibratedLatticeModel(nn.Module):
         for lattice_layer in self.lattice_layers: #TODO: Does this need to be in a loop?
             x = lattice_layer(x)
         return x
+    
+    @torch.no_grad()
+    def apply_constraints(self) -> None:
+        """Constrains the model into desired constraints specified by the config."""
+        for calibrator in self.calibrators.values():
+            calibrator.apply_constraints()
+        for lattice in self.lattice_layers:
+            lattice.apply_constraints()
+        
+    @torch.no_grad()
+    def assert_constraints(self, eps: float = 1e-6) -> dict[str, list[str]]:
+        """Asserts all layers within model satisfied specified constraints.
+
+        Asserts monotonicity pairs and output bounds for categorical calibrators,
+        monotonicity and output bounds for numerical calibrators, and monotonicity and
+        weights summing to 1 if weighted_average for linear layer.
+
+        Args:
+            eps: the margin of error allowed
+
+        Returns:
+            A dict where key is feature_name for calibrators and 'linear' for the linear
+            layer, and value is the error messages for each layer. Layers with no error
+            messages are not present in the dictionary.
+        """
+        messages = {}
+
+        for name, calibrator in self.calibrators.items():
+            calibrator_messages = calibrator.assert_constraints(eps)
+            if calibrator_messages:
+                messages[f"{name}_calibrator"] = calibrator_messages
+        
+        for lattice in self.lattice_layers:
+            lattice_messages = lattice.assert_constraints(eps)
+            if lattice_messages:
+                messages["lattice"] = lattice_messages
+        # if self.output_calibrator:
+        #     output_calibrator_messages = self.output_calibrator.assert_constraints(eps)
+        #     if output_calibrator_messages:
+        #         messages["output_calibrator"] = output_calibrator_messages
+
+        return messages

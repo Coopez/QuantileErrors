@@ -161,8 +161,9 @@ class CalibratedLatticeLayer(ConstrainedModule):
         for calibrator in self.calibrators.values():
             calibrator.apply_constraints()
         self.lattice.apply_constraints()
-        if self.output_calibrator:
-            self.output_calibrator.apply_constraints()
+        for output_calibrator in self.output_calibrator.values():
+            output_calibrator.apply_constraints()
+
 
     @torch.no_grad()
     def assert_constraints(self, eps: float = 1e-6) -> dict[str, list[str]]:
@@ -182,18 +183,21 @@ class CalibratedLatticeLayer(ConstrainedModule):
         """
         messages = {}
 
-        for name, calibrator in self.calibrators.items():
-            calibrator_messages = calibrator.assert_constraints(eps)
-            if calibrator_messages:
-                messages[f"{name}_calibrator"] = calibrator_messages
+        # for name, calibrator in self.calibrators.items():
+        #     calibrator_messages = calibrator.assert_constraints(eps)
+        #     if calibrator_messages:
+        #         messages[f"{name}_calibrator"] = calibrator_messages
         lattice_messages = self.lattice.assert_constraints(eps)
         if lattice_messages:
             messages["lattice"] = lattice_messages
-        if self.output_calibrator:
-            output_calibrator_messages = self.output_calibrator.assert_constraints(eps)
+        # if self.output_calibrator:
+        #     output_calibrator_messages = self.output_calibrator.assert_constraints(eps)
+        #     if output_calibrator_messages:
+        #         messages["output_calibrator"] = output_calibrator_messages
+        for name, output_calibrator in self.output_calibrator.items():
+            output_calibrator_messages = output_calibrator.assert_constraints(eps)
             if output_calibrator_messages:
-                messages["output_calibrator"] = output_calibrator_messages
-
+                messages[f"{name}_output_calibrator"] = output_calibrator_messages
         return messages
     
 
