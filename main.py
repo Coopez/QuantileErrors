@@ -18,26 +18,23 @@ from losses.qr_loss import sqr_loss
 from models.SQR_LSTM_Lattice import SQR_LSTM_Lattice
 import time
 
+from config import _LOG_NEPTUNE
 
-# Hyperparameters
+if _LOG_NEPTUNE:
+    import neptune
+    from config import _DATA_DESCRIPTION
+    from api_key import _NEPTUNE_API_TOKEN
+    run = neptune.init_run(
+        project="n1kl4s/QuantileError",
+        api_token=_NEPTUNE_API_TOKEN,
+    )
+    run['data/type'] = _DATA_DESCRIPTION
 
-_BATCHSIZE = 128
-_RANDOM_SEED = 42
-_LEARNING_RATE = 0.001
-# LSTM Hyperparameters
-_INPUT_SIZE_LSTM = 1
-_HIDDEN_SIZE_LSTM = 2
-_NUM_LAYERS_LSTM = 1
-_WINDOW_SIZE = 1
-_PRED_LENGTH = 1 # Horizon size
-# Lattice Hyperparameters
-_NUM_LAYERS_LATTICE = 1
-_NUM_KEYPOINTS = 5
-_INPUT_DIM_LATTICE_FIRST_LAYER = 1 
-_NUM_LATTICE_FIRST_LAYER = _HIDDEN_SIZE_LSTM + 1 
-
-
-
+from config import params
+_NUM_LATTICE_FIRST_LAYER = params['_HIDDEN_SIZE_LSTM'] + 1
+if _LOG_NEPTUNE:
+    run['parameters'] = params
+    
 train,train_target,valid,valid_target,_,_ = data_import()
 train = train[:,11]
 valid = valid[:,11]
@@ -57,38 +54,40 @@ vset = {"irradiance":valid,"quantiles":quantiles_valid}
 Xv = pd.DataFrame(vset)
 
 # Data
-features = [NumericalFeature("irradiance", X["irradiance"].values, num_keypoints=_NUM_KEYPOINTS), NumericalFeature("quantiles", quantiles,num_keypoints=_NUM_KEYPOINTS, monotonicity=enums.Monotonicity.INCREASING)]
-data = CalibratedDataset(X, y, features, window_size=_WINDOW_SIZE,horizon_size=_PRED_LENGTH,device=device) 
-dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=True,generator=torch.Generator(device=device))
+features = [NumericalFeature("irradiance", X["irradiance"].values, num_keypoints=params['_NUM_KEYPOINTS']), 
+            NumericalFeature("quantiles", quantiles, num_keypoints=params['_NUM_KEYPOINTS'], monotonicity=enums.Monotonicity.INCREASING)]
+data = CalibratedDataset(X, y, features, window_size=params['_WINDOW_SIZE'], horizon_size=params['_PRED_LENGTH'], device=device) 
+dataloader = torch.utils.data.DataLoader(data, batch_size=params['_BATCHSIZE'], shuffle=True, generator=torch.Generator(device=device))
 
-data_valid = CalibratedDataset(Xv, valid_target, features, window_size=_WINDOW_SIZE,horizon_size=_PRED_LENGTH,device=device)
-data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=_BATCHSIZE, shuffle=True,generator=torch.Generator(device=device))
+data_valid = CalibratedDataset(Xv, valid_target, features, window_size=params['_WINDOW_SIZE'], horizon_size=params['_PRED_LENGTH'], device=device)
+data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=params['_BATCHSIZE'], shuffle=True, generator=torch.Generator(device=device))
 
 # Model
 
-lstm = SQR_LSTM_Lattice(input_size=_INPUT_SIZE_LSTM, hidden_size=_HIDDEN_SIZE_LSTM, layers=_NUM_LAYERS_LSTM, window_size=_WINDOW_SIZE, output_size=1, pred_length=_PRED_LENGTH)
+lstm = SQR_LSTM_Lattice(input_size=params['_INPUT_SIZE_LSTM'], hidden_size=params['_HIDDEN_SIZE_LSTM'], layers=params['_NUM_LAYERS_LSTM'], window_size=params['_WINDOW_SIZE'], output_size=1, pred_length=params['_PRED_LENGTH'])
 features_lattice = []
-gen_LSTM_out = np.random.uniform(0,1,(_BATCHSIZE,1))
-for i in range(_HIDDEN_SIZE_LSTM):
-    features_lattice.append(NumericalFeature(f"feature_{i}", gen_LSTM_out, num_keypoints=_NUM_KEYPOINTS))
-features_lattice.append(NumericalFeature("quantiles", quantiles,num_keypoints=_NUM_KEYPOINTS, monotonicity=enums.Monotonicity.INCREASING))
+gen_LSTM_out = np.random.uniform(0, 1, (params['_BATCHSIZE'], 1))
+for i in range(params['_HIDDEN_SIZE_LSTM']):
+    features_lattice.append(NumericalFeature(f"feature_{i}", gen_LSTM_out, num_keypoints=params['_NUM_KEYPOINTS']))
+features_lattice.append(NumericalFeature("quantiles", quantiles, num_keypoints=params['_NUM_KEYPOINTS'], monotonicity=enums.Monotonicity.INCREASING))
 
+lattice = CalibratedLatticeModel(features_lattice, output_min=0, output_max=1, num_layers=params['_NUM_LAYERS_LATTICE'], output_size=params['_PRED_LENGTH'], input_dim_per_lattice=params['_INPUT_DIM_LATTICE_FIRST_LAYER'], num_lattice_first_layer=_NUM_LATTICE_FIRST_LAYER, calibration_keypoints=params['_NUM_KEYPOINTS'])
 
-
-lattice = CalibratedLatticeModel(features_lattice, output_min=0, output_max=1, num_layers=_NUM_LAYERS_LATTICE, output_size=_PRED_LENGTH, input_dim_per_lattice = _INPUT_DIM_LATTICE_FIRST_LAYER, num_lattice_first_layer = _NUM_LATTICE_FIRST_LAYER, calibration_keypoints = _NUM_KEYPOINTS)
 # Forward pass
 # Define loss function and optimizer
+if _LOG_NEPTUNE:
+    run['model_summary'] = str(lstm) + str(lattice)
 
 criterion = sqr_loss
 # need to have both models on the same optimizer
-optimizer = torch.optim.Adam(list(lstm.parameters()) + list(lattice.parameters()), lr=_LEARNING_RATE)
+optimizer = torch.optim.Adam(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
 #optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 # Training loop
 lstm.train()
 lattice.train()
 
-epochs = 50
+epochs = params['_EPOCHS']
 for epoch in range(epochs):
     start_time = time.time()
     train_losses = []
@@ -110,7 +109,8 @@ for epoch in range(epochs):
         loss.backward()
         optimizer.step()
         train_losses.append(loss.item())
-    
+    if _LOG_NEPTUNE:
+        run['train/loss'].log(np.mean(train_losses))
     lstm.eval()
     lattice.eval()
     with torch.no_grad():
@@ -125,10 +125,13 @@ for epoch in range(epochs):
             # Compute loss
             loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
             valid_losses.append(loss.item())
-    
+    if _LOG_NEPTUNE:
+        run['valid/loss'].log(np.mean(valid_losses))
     epoch_time = time.time() - start_time
     print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}, Time: {epoch_time:.2f}s")
 
+if _LOG_NEPTUNE:
+    run.stop()
 
 
 """
@@ -136,12 +139,13 @@ TODO
 DONE - Hyperparameter support
 DONE - add Data Normalization 
 DONE - Debugging monotonocity with calibration and layer layout
-ISSUE - GPU support  
+DONE - GPU support  
 DONE - SQR integration
 DONE - Validation
+- GPU optimization: Need more consideration towards optimal batch size, and data loading.
 - Test
-- Neptune
-- Sky cam model&data integration
+DONE - Neptune
+- Erling sky cam model&data integration
 - More Loss functions
 - Probabilistic Metrics
 
