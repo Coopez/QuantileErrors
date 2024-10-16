@@ -80,3 +80,144 @@ def data_import():
 #     x,y = batch
 #     print(x.shape)
 #     print(y.shape)    # Should print the first window and horizon
+
+
+class Data_Normalizer():
+    """
+    Class normalizing and outputting train, valid, train_target, valid_target, test, test_target
+    unless not supplied, then it will output None.
+    Always uses min-max normalization.
+    """
+    def __init__(self,
+                 train: np.ndarray = None,
+                 train_target: np.ndarray = None,
+                 valid: np.ndarray = None,
+                 valid_target: np.ndarray = None,
+                 test: np.ndarray = None,
+                 test_target: np.ndarray = None):
+        """
+        Initialize the Data_Normalizer with training, validation, and test data.
+
+        Args:
+            train (np.ndarray): Training data.
+            train_target (np.ndarray): Training target data.
+            valid (np.ndarray): Validation data.
+            valid_target (np.ndarray): Validation target data.
+            test (np.ndarray): Test data.
+            test_target (np.ndarray): Test target data.
+        """
+        self.train = train
+        self.train_target = train_target
+        self.valid = valid
+        self.valid_target = valid_target
+        self.test = test
+        self.test_target = test_target
+        
+        if train is not None:
+            self.min_train = np.min(train)
+            self.max_train = np.max(train)
+        if train_target is not None:
+            self.min_train_target = np.min(train_target)
+            self.max_train_target = np.max(train_target)
+        if valid is not None:
+            self.min_valid = np.min(valid)
+            self.max_valid = np.max(valid)
+        if valid_target is not None:
+            self.min_valid_target = np.min(valid_target)
+            self.max_valid_target = np.max(valid_target)
+        if test is not None:
+            self.min_test = np.min(test)
+            self.max_test = np.max(test)
+        if test_target is not None:
+            self.min_test_target = np.min(test_target)
+            self.max_test_target = np.max(test_target)
+            
+    def apply_minmax(self,var:str):
+        return (self.__dict__[var] - self.__dict__[f"min_{var}"])/(self.__dict__[f"max_{var}"] - self.__dict__[f"min_{var}"])
+    def reverse_minmax(self,var:str):
+        return (self.__dict__[var]*(self.__dict__[f"max_{var}"] - self.__dict__[f"min_{var}"])) + self.__dict__[f"min_{var}"]
+    def apply_minmax_on_data(self,var:str,data: np.ndarray):
+        return (data - self.__dict__[f"min_{var}"])/(self.__dict__[f"max_{var}"] - self.__dict__[f"min_{var}"])
+    def reverse_minmax_on_data(self,var:str,data: np.ndarray):
+        return (data*(self.__dict__[f"max_{var}"] - self.__dict__[f"min_{var}"])) + self.__dict__[f"min_{var}"]
+    
+    def transform_all(self):
+        """
+        Apply min-max normalization to all datasets.
+
+        Returns:
+            tuple: Normalized train, train_target, valid, valid_target, test, test_target datasets.
+        """
+        local = []
+        if self.train is not None:
+            local.append(self.apply_minmax("train"))
+        if self.train_target is not None:
+            local.append(self.apply_minmax("train_target"))
+        if self.valid is not None:
+            local.append(self.apply_minmax("valid"))
+        if self.valid_target is not None:
+            local.append(self.apply_minmax("valid_target"))
+        if self.test is not None:
+            local.append(self.apply_minmax("test"))
+        if self.test_target is not None:
+            local.append(self.apply_minmax("test_target"))
+
+        return local
+    
+    def inverse_transform_all(self):
+        """
+        Apply inverse min-max normalization to all datasets.
+
+        Returns:
+            tuple: Inverse transformed train, train_target, valid, valid_target, test, test_target datasets.
+        """
+        local = []
+        if self.train is not None:
+            local.append(self.reverse_minmax("train"))
+        if self.train_target is not None:
+            local.append(self.reverse_minmax("train_target"))
+        if self.valid is not None:
+            local.append(self.reverse_minmax("valid"))
+        if self.valid_target is not None:
+            local.append(self.reverse_minmax("valid_target"))
+        if self.test is not None:
+            local.append(self.reverse_minmax("test"))
+        if self.test_target is not None:
+            local.append(self.reverse_minmax("test_target"))
+        return local
+
+    def transform(self, data, target: str="train"):
+        """
+        Apply min-max normalization to a specific dataset.
+
+        Args:
+            data (np.ndarray): Data to be normalized.
+            target (str): The type of data to normalize. One of 'train', 'train_target', 'valid', 'valid_target', 'test', 'test_target'.
+
+        Returns:
+            np.ndarray: Normalized data.
+        """
+        if target in ["train", "train_target", "valid", "valid_target", "test", "test_target"]:
+            return self.apply_minmax_on_data(target, data)
+        else:
+            raise ValueError("Target must be either train, train_target, valid, valid_target, test or test_target")
+
+    def inverse_transform(self, data, target: str="train"):
+        """
+        Apply inverse min-max normalization to a specific dataset.
+
+        Args:
+            data (np.ndarray): Data to be inverse transformed.
+            target (str): The type of data to inverse transform. One of 'train', 'train_target', 'valid', 'valid_target', 'test', 'test_target'.
+
+        Returns:
+            np.ndarray: Inverse transformed data.
+        """
+        if target in ["train", "train_target", "valid", "valid_target", "test", "test_target"]:
+            return self.reverse_minmax_on_data(target, data)
+        else:
+            raise ValueError("Target must be either train, train_target, valid, valid_target, test or test_target")
+    
+
+        
+    

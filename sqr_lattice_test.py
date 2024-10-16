@@ -8,7 +8,7 @@ import pytorch_lattice.enums as enums
 
 import numpy as np
 import pandas as pd
-from res.data import data_import
+from res.data import data_import, Data_Normalizer
 
 from models.Calibrated_lattice_model import CalibratedLatticeModel
 
@@ -40,22 +40,30 @@ _NUM_LATTICE_FIRST_LAYER = _HIDDEN_SIZE_LSTM + 1
 
 train,train_target,valid,valid_target,_,_ = data_import()
 train = train[:,11]
-#valid = valid[:,11]
-#
-# normalize train target real quick
-train_target = (train_target - np.min(train_target))/(np.max(train_target) - np.min(train_target))
+valid = valid[:,11]
 
+# normalize train and valid
+Normalizer = Data_Normalizer(train,train_target,valid,valid_target)
+train,train_target,valid,valid_target = Normalizer.transform_all()
 
+# Training set
 quantiles = np.random.uniform(0,1,len(train))
 dset = {"irradiance":train,"quantiles":quantiles}
 X = pd.DataFrame(dset)
 y = train_target
-
+# Validation set
+quantiles_valid = np.random.uniform(0,1,len(valid))
+vset = {"irradiance":valid,"quantiles":quantiles_valid}
+Xv = pd.DataFrame(vset)
 
 # Data
 features = [NumericalFeature("irradiance", X["irradiance"].values, num_keypoints=_NUM_KEYPOINTS), NumericalFeature("quantiles", quantiles,num_keypoints=_NUM_KEYPOINTS, monotonicity=enums.Monotonicity.INCREASING)]
 data = CalibratedDataset(X, y, features, window_size=_WINDOW_SIZE,horizon_size=_PRED_LENGTH) 
 dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=True)
+
+data_valid = CalibratedDataset(Xv, valid_target, features, window_size=_WINDOW_SIZE,horizon_size=_PRED_LENGTH)
+data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=_BATCHSIZE, shuffle=True)
+
 # Model
 
 lstm = SQR_LSTM_Lattice(input_size=_INPUT_SIZE_LSTM, hidden_size=_HIDDEN_SIZE_LSTM, layers=_NUM_LAYERS_LSTM, window_size=_WINDOW_SIZE, output_size=1, pred_length=_PRED_LENGTH)
@@ -83,6 +91,8 @@ lattice.train()
 epochs = 50
 for epoch in range(epochs):
     train_losses = []
+    lstm.train()
+    lattice.train()
     for batch in dataloader:
         training_data, quantile, target = batch
         
@@ -90,7 +100,7 @@ for epoch in range(epochs):
         # Forward pass
         x = lstm(training_data)
         x = torch.cat((x, quantile.squeeze(-1)), dim=-1)
-        output = lattice(x.squeeze())
+        output = lattice(x)
         
         # Compute loss
         loss = criterion(output.unsqueeze(-1), target, quantile,type='pinball')
@@ -100,7 +110,22 @@ for epoch in range(epochs):
         loss.backward()
         optimizer.step()
         train_losses.append(loss.item())
-    print(f"Epoch {epoch+1}/{epochs}, Loss: {np.mean(train_losses)}")
+    
+    lstm.eval()
+    lattice.eval()
+    with torch.no_grad():
+        valid_losses = []
+        for batch in data_loader_valid:
+            training_data, quantile, target = batch
+            # Forward pass
+            x = lstm(training_data)
+            x = torch.cat((x, quantile.squeeze(-1)), dim=-1)
+            output = lattice(x)
+            
+            # Compute loss
+            loss = criterion(output.unsqueeze(-1), target, quantile,type='pinball')
+            valid_losses.append(loss.item())
+    print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}")
 
 
 
@@ -113,7 +138,7 @@ DONE - add Data Normalization
 DONE - Debugging monotonocity with calibration and layer layout
 ISSUE - GPU support  
 DONE - SQR integration
-- Validation
+DONE - Validation
 - Test
 - Neptune
 - Sky cam model&data integration
