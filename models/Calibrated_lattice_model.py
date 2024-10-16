@@ -15,9 +15,10 @@ import warnings
 
 from pytorch_lattice.utils.models import (
     calibrate_and_stack,
-    initialize_feature_calibrators,
     initialize_monotonicities,
 )
+from utils.calibrator import initialize_feature_calibrators
+
 class CalibratedLatticeModel(nn.Module):
     """
     A PyTorch module that implements a calibrated lattice model with multiple layers.

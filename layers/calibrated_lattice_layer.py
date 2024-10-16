@@ -10,7 +10,7 @@ from pytorch_lattice.enums import (
     Monotonicity,
     NumericalCalibratorInit,
 )
-from pytorch_lattice.layers import Lattice, NumericalCalibrator
+from pytorch_lattice.layers import Lattice#, NumericalCalibrator
 from pytorch_lattice.utils.models import (
     calibrate_and_stack,
     initialize_feature_calibrators,
@@ -25,6 +25,8 @@ import numpy as np
 import pandas as pd
 
 from layers.calibrated_linear import Linear
+
+from utils.calibrator import NumericalCalibrator
 
 class CalibratedLatticeLayer(ConstrainedModule):
     """PyTorch Calibrated Lattice Model.

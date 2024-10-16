@@ -1,8 +1,7 @@
 import torch
-# device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
-# torch.set_default_device(device)
-#TODO it seems like overarching to cuda calls do not touch subcomponents of methods with sparse tensors in pytorch 2.4.
-# May need to export all relevant functions and do a manual device assign for gpu support
+device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
+torch.set_default_device(device)
+#TODO GPU performance is worse than CPU unless batch size is increased. Maybe need better data loading.
 
 import pytorch_lattice.enums as enums
 
@@ -17,13 +16,14 @@ from pytorch_lattice.models.features import NumericalFeature
 
 from losses.qr_loss import sqr_loss
 from models.SQR_LSTM_Lattice import SQR_LSTM_Lattice
+import time
 
 
 # Hyperparameters
 
-_BATCHSIZE = 16
+_BATCHSIZE = 128
 _RANDOM_SEED = 42
-_LEARNING_RATE = 0.0001
+_LEARNING_RATE = 0.001
 # LSTM Hyperparameters
 _INPUT_SIZE_LSTM = 1
 _HIDDEN_SIZE_LSTM = 2
@@ -58,11 +58,11 @@ Xv = pd.DataFrame(vset)
 
 # Data
 features = [NumericalFeature("irradiance", X["irradiance"].values, num_keypoints=_NUM_KEYPOINTS), NumericalFeature("quantiles", quantiles,num_keypoints=_NUM_KEYPOINTS, monotonicity=enums.Monotonicity.INCREASING)]
-data = CalibratedDataset(X, y, features, window_size=_WINDOW_SIZE,horizon_size=_PRED_LENGTH) 
-dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=True)
+data = CalibratedDataset(X, y, features, window_size=_WINDOW_SIZE,horizon_size=_PRED_LENGTH,device=device) 
+dataloader = torch.utils.data.DataLoader(data, batch_size=_BATCHSIZE, shuffle=True,generator=torch.Generator(device=device))
 
-data_valid = CalibratedDataset(Xv, valid_target, features, window_size=_WINDOW_SIZE,horizon_size=_PRED_LENGTH)
-data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=_BATCHSIZE, shuffle=True)
+data_valid = CalibratedDataset(Xv, valid_target, features, window_size=_WINDOW_SIZE,horizon_size=_PRED_LENGTH,device=device)
+data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=_BATCHSIZE, shuffle=True,generator=torch.Generator(device=device))
 
 # Model
 
@@ -72,7 +72,7 @@ gen_LSTM_out = np.random.uniform(0,1,(_BATCHSIZE,1))
 for i in range(_HIDDEN_SIZE_LSTM):
     features_lattice.append(NumericalFeature(f"feature_{i}", gen_LSTM_out, num_keypoints=_NUM_KEYPOINTS))
 features_lattice.append(NumericalFeature("quantiles", quantiles,num_keypoints=_NUM_KEYPOINTS, monotonicity=enums.Monotonicity.INCREASING))
-#[NumericalFeature("irradiance", X["irradiance"].values, num_keypoints=_NUM_KEYPOINTS), NumericalFeature("quantiles", quantiles,num_keypoints=_NUM_KEYPOINTS, monotonicity=enums.Monotonicity.INCREASING)]
+
 
 
 lattice = CalibratedLatticeModel(features_lattice, output_min=0, output_max=1, num_layers=_NUM_LAYERS_LATTICE, output_size=_PRED_LENGTH, input_dim_per_lattice = _INPUT_DIM_LATTICE_FIRST_LAYER, num_lattice_first_layer = _NUM_LATTICE_FIRST_LAYER, calibration_keypoints = _NUM_KEYPOINTS)
@@ -90,12 +90,12 @@ lattice.train()
 
 epochs = 50
 for epoch in range(epochs):
+    start_time = time.time()
     train_losses = []
     lstm.train()
     lattice.train()
     for batch in dataloader:
         training_data, quantile, target = batch
-        
         
         # Forward pass
         x = lstm(training_data)
@@ -103,7 +103,7 @@ for epoch in range(epochs):
         output = lattice(x)
         
         # Compute loss
-        loss = criterion(output.unsqueeze(-1), target, quantile,type='pinball')
+        loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
         
         # Backward pass and optimization
         optimizer.zero_grad()
@@ -123,11 +123,11 @@ for epoch in range(epochs):
             output = lattice(x)
             
             # Compute loss
-            loss = criterion(output.unsqueeze(-1), target, quantile,type='pinball')
+            loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
             valid_losses.append(loss.item())
-    print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}")
-
-
+    
+    epoch_time = time.time() - start_time
+    print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}, Time: {epoch_time:.2f}s")
 
 
 
