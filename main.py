@@ -142,5 +142,7 @@ DONE - Validation
 - Test
 - Neptune
 - Sky cam model&data integration
+- More Loss functions
+- Probabilistic Metrics
 
 """
