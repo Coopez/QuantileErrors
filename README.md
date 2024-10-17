@@ -24,3 +24,8 @@ pytorch-lattice
 Neptune can be used by setting `_LOG_NEPTUNE = True` in `config.py`. 
 If uploading to neptune, one needs a repo and an api key to that repo. 
 I import that api key over the untracked file `api_key.py`. If you want to upload tests in my neptune repo I can invite you in which case you will generate your own api key.
+
+### Deterministic Optimization
+
+Can be enabled in config. Not guaranteed better results, but interesting. Will set epoch to 1 automatically.
+Requires packages `scipy` and `pytorch-minimize` from https://github.com/gngdb/pytorch-minimize

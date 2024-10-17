@@ -1,9 +1,0 @@
-### What is probably required
-# python=3.11
-numpy
-pytorch
-pandas
-neptune
-matplotlib
-seaborn
-pytorch-lattice

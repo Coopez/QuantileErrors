@@ -64,63 +64,85 @@ data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=params['_
 
 # Model
 
-lstm = SQR_LSTM_Lattice(input_size=params['_INPUT_SIZE_LSTM'], hidden_size=params['_HIDDEN_SIZE_LSTM'], layers=params['_NUM_LAYERS_LSTM'], window_size=params['_WINDOW_SIZE'], output_size=1, pred_length=params['_PRED_LENGTH'])
+#lstm = SQR_LSTM_Lattice(input_size=params['_INPUT_SIZE_LSTM'], hidden_size=params['_HIDDEN_SIZE_LSTM'], layers=params['_NUM_LAYERS_LSTM'], window_size=params['_WINDOW_SIZE'], output_size=1, pred_length=params['_PRED_LENGTH'])
 features_lattice = []
 gen_LSTM_out = np.random.uniform(0, 1, (params['_BATCHSIZE'], 1))
 for i in range(params['_HIDDEN_SIZE_LSTM']):
     features_lattice.append(NumericalFeature(f"feature_{i}", gen_LSTM_out, num_keypoints=params['_NUM_KEYPOINTS']))
 features_lattice.append(NumericalFeature("quantiles", quantiles, num_keypoints=params['_NUM_KEYPOINTS'], monotonicity=enums.Monotonicity.INCREASING))
 
-lattice = CalibratedLatticeModel(features_lattice, output_min=0, output_max=1, num_layers=params['_NUM_LAYERS_LATTICE'], output_size=params['_PRED_LENGTH'], input_dim_per_lattice=params['_INPUT_DIM_LATTICE_FIRST_LAYER'], num_lattice_first_layer=_NUM_LATTICE_FIRST_LAYER, calibration_keypoints=params['_NUM_KEYPOINTS'])
+#lattice = CalibratedLatticeModel(features_lattice, output_min=0, output_max=1, num_layers=params['_NUM_LAYERS_LATTICE'], output_size=params['_PRED_LENGTH'], input_dim_per_lattice=params['_INPUT_DIM_LATTICE_FIRST_LAYER'], num_lattice_first_layer=_NUM_LATTICE_FIRST_LAYER, calibration_keypoints=params['_NUM_KEYPOINTS'])
+
+from models.comb_dummy import LSTM_Lattice
+from pytorch_lattice.enums import (
+    Interpolation,
+    LatticeInit,
+)
+lstm_paras = [params['_INPUT_SIZE_LSTM'], params['_HIDDEN_SIZE_LSTM'], params['_NUM_LAYERS_LSTM'], params['_WINDOW_SIZE'],params['_PRED_LENGTH'],1]
+lattice_paras = [features_lattice, True, 0, 1,LatticeInit.LINEAR,Interpolation.HYPERCUBE,params['_NUM_LAYERS_LATTICE'], params['_INPUT_DIM_LATTICE_FIRST_LAYER'], _NUM_LATTICE_FIRST_LAYER, params['_PRED_LENGTH'], params['_NUM_KEYPOINTS']]
+model = LSTM_Lattice(lstm_paras, lattice_paras)
 
 # Forward pass
 # Define loss function and optimizer
 if _LOG_NEPTUNE:
-    run['model_summary'] = str(lstm) + str(lattice)
+    run['model_summary'] = str(model) #str(lstm) + str(lattice)
 
 criterion = sqr_loss
-# need to have both models on the same optimizer
-optimizer = torch.optim.Adam(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
-#optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+
+if params['_DETERMINISTIC_OPTIMIZATION']:
+    from pytorch_minimize.optim import MinimizeWrapper
+    minimizer_args = dict(method='SLSQP', options={'disp':True, 'maxiter':100})
+    optimizer = MinimizeWrapper(model.parameters(), minimizer_args)
+else:
+    #optimizer = torch.optim.RAdam(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
+    #optimizer = torch.optim.NAdam(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
+    optimizer = torch.optim.Adam(model.parameters(), lr=params['_LEARNING_RATE'])
+    #optimizer = torch.optim.RMSprop(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
+    #optimizer = torch.optim.AdamW(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
 
 # Training loop
-lstm.train()
-lattice.train()
+# lstm.train()
+# lattice.train()
 
 epochs = params['_EPOCHS']
+if params['_DETERMINISTIC_OPTIMIZATION']:
+    epochs = 1
 for epoch in range(epochs):
     start_time = time.time()
     train_losses = []
-    lstm.train()
-    lattice.train()
-    for batch in dataloader:
-        training_data, quantile, target = batch
-        
-        # Forward pass
-        x = lstm(training_data)
-        x = torch.cat((x, quantile.squeeze(-1)), dim=-1)
-        output = lattice(x)
-        
-        # Compute loss
-        loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
-        
-        # Backward pass and optimization
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        train_losses.append(loss.item())
-    if _LOG_NEPTUNE:
-        run['train/loss'].log(np.mean(train_losses))
-    lstm.eval()
-    lattice.eval()
+    model.train()
+    for training_data, quantile, target in dataloader:
+        if params['_DETERMINISTIC_OPTIMIZATION']:
+            def closure():
+                optimizer.zero_grad()
+                output = model(training_data,quantile)
+                loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
+                #loss.backward()
+                return loss
+            optimizer.step(closure)
+        else:
+            # Normal forward pass
+            output = model(training_data,quantile)
+            # Compute loss
+            loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
+            
+            #Backward pass and optimization
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            train_losses.append(loss.item())
+            if _LOG_NEPTUNE:
+                run['train/loss'].log(np.mean(train_losses))
+    # lstm.eval()
+    # lattice.eval()
+    model.eval()
     with torch.no_grad():
         valid_losses = []
         for batch in data_loader_valid:
             training_data, quantile, target = batch
             # Forward pass
-            x = lstm(training_data)
-            x = torch.cat((x, quantile.squeeze(-1)), dim=-1)
-            output = lattice(x)
+            output = model(training_data,quantile)
             
             # Compute loss
             loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
@@ -129,6 +151,7 @@ for epoch in range(epochs):
         run['valid/loss'].log(np.mean(valid_losses))
     epoch_time = time.time() - start_time
     print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}, Time: {epoch_time:.2f}s")
+
 
 if _LOG_NEPTUNE:
     run.stop()
@@ -142,11 +165,11 @@ DONE - Debugging monotonocity with calibration and layer layout
 DONE - GPU support  
 DONE - SQR integration
 DONE - Validation
-- GPU optimization: Need more consideration towards optimal batch size, and data loading.
-- Test
 DONE - Neptune
+WAIT - GPU optimization: Need more consideration towards optimal batch size, and data loading.
+WAIT - Test
 - Erling sky cam model&data integration
-- More Loss functions
+WAIT - More Loss functions
 - Probabilistic Metrics
 
 """
