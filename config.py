@@ -6,8 +6,8 @@ _LOG_NEPTUNE = False
 
 params = dict(
 _BATCHSIZE = 128,
-_RANDOM_SEED = 42,
-_LEARNING_RATE = 0.001,
+_RANDOM_SEED = 0,
+_LEARNING_RATE = 0.01,
 # LSTM Hyperparameters
 _INPUT_SIZE_LSTM = 1,
 _HIDDEN_SIZE_LSTM = 2,
@@ -20,10 +20,11 @@ _NUM_KEYPOINTS = 5,
 _INPUT_DIM_LATTICE_FIRST_LAYER = 1,
 _EPOCHS = 10,
 _DETERMINISTIC_OPTIMIZATION= False,
-_LOSS = 'pinball',
 
 
 
+_LOSS = 1, #Index of loss_option
+loss_option = ['calibration_sharpness_loss', 'pinball_loss'],
 
 _REGULAR_OPTIMIZER = 0, #Index of optimizer_option
 optimizer_option = ['Adam', 'RAdam', 'NAdam', 'RMSprop', 'AdamW'],

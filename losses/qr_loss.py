@@ -1,9 +1,9 @@
 import torch
 
-def sqr_loss(y_pred,y_true,quantile,type='pinball'):
-    if type == 'pinball':
+def sqr_loss(y_pred,y_true,quantile,type='pinball_loss'):
+    if type == 'pinball_loss':
         return torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
-    elif type == 'beyond':
+    elif type == 'calibration_sharpness_loss':
         # Expects y_pred to be of size (batch_size,window_size,2) for quantile and 1-quantile
         assert y_pred.shape[2] == 2, 'y_pred should have quantile and 1-quantile'
         lambda_ = 0.5

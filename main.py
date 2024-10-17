@@ -3,13 +3,13 @@ device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_av
 torch.set_default_device(device)
 #TODO GPU performance is worse than CPU unless batch size is increased. Maybe need better data loading.
 
+
+
 import pytorch_lattice.enums as enums
 
 import numpy as np
 import pandas as pd
 from res.data import data_import, Data_Normalizer
-
-from models.Calibrated_lattice_model import CalibratedLatticeModel
 
 from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
@@ -17,7 +17,7 @@ from pytorch_lattice.models.features import NumericalFeature
 from losses.qr_loss import sqr_loss
 from models.LSTM_Lattice import LSTM_Lattice
 import time
-
+from utils.helper_func import generate_quantiles
 from config import _LOG_NEPTUNE
 
 if _LOG_NEPTUNE:
@@ -31,6 +31,10 @@ if _LOG_NEPTUNE:
     run['data/type'] = _DATA_DESCRIPTION
 
 from config import params
+
+# pytorch random seed
+torch.manual_seed(params['_RANDOM_SEED'])
+
 _NUM_LATTICE_FIRST_LAYER = params['_HIDDEN_SIZE_LSTM'] + 1
 if _LOG_NEPTUNE:
     run['parameters'] = params
@@ -44,16 +48,19 @@ Normalizer = Data_Normalizer(train,train_target,valid,valid_target)
 train,train_target,valid,valid_target = Normalizer.transform_all()
 
 # Training set
-quantiles = np.random.uniform(0,1,len(train))
+quantiles = generate_quantiles(len(train),params)
+
 dset = {"irradiance":train,"quantiles":quantiles}
 X = pd.DataFrame(dset)
 y = train_target
+
 # Validation set
-quantiles_valid = np.random.uniform(0,1,len(valid))
+quantiles_valid = generate_quantiles(len(valid),params)
+
 vset = {"irradiance":valid,"quantiles":quantiles_valid}
 Xv = pd.DataFrame(vset)
 
-# Data
+# Data TODO continue to add compatibility for multiple quantiles features
 features = [NumericalFeature("irradiance", X["irradiance"].values, num_keypoints=params['_NUM_KEYPOINTS']), 
             NumericalFeature("quantiles", quantiles, num_keypoints=params['_NUM_KEYPOINTS'], monotonicity=enums.Monotonicity.INCREASING)]
 data = CalibratedDataset(X, y, features, window_size=params['_WINDOW_SIZE'], horizon_size=params['_PRED_LENGTH'], device=device) 
@@ -89,7 +96,8 @@ lattice_paras = {
     'output_size':params['_PRED_LENGTH'],
     'calibration_keypoints':params['_NUM_KEYPOINTS'],
     }
-model = LSTM_Lattice(lstm_paras, lattice_paras)
+model = LSTM_Lattice(lstm_paras, lattice_paras,
+                     loss_option=params['loss_option'][params['_LOSS']])
 
 # Forward pass
 # Define loss function and optimizer
@@ -104,7 +112,8 @@ if params['_DETERMINISTIC_OPTIMIZATION']:
     minimizer_args = dict(method='SLSQP', options={'disp':True, 'maxiter':100}) # supports a range of methods
     optimizer = MinimizeWrapper(model.parameters(), minimizer_args)
 else:
-    optimizer = torch.optim.{params['optimizer_option'][params['_REGULAR_OPTIMIZER']]}(model.parameters(), lr=params['_LEARNING_RATE'])
+    optimizer_class = getattr(torch.optim, params['optimizer_option'][params['_REGULAR_OPTIMIZER']])
+    optimizer = optimizer_class(model.parameters(), lr=params['_LEARNING_RATE'])
 
 # Training loop
 
@@ -120,7 +129,8 @@ for epoch in range(epochs):
             def closure():
                 optimizer.zero_grad()
                 output = model(training_data,quantile)
-                loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
+                loss = criterion(output, target, quantile,
+                                 type=params['loss_option'][params['_LOSS']])
                 #loss.backward()
                 return loss
             optimizer.step(closure)
@@ -128,7 +138,8 @@ for epoch in range(epochs):
             # Normal forward pass
             output = model(training_data,quantile)
             # Compute loss
-            loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
+            loss = criterion(output, target, quantile,
+                             type=params['loss_option'][params['_LOSS']])
             
             #Backward pass and optimization
             optimizer.zero_grad()
@@ -137,8 +148,6 @@ for epoch in range(epochs):
             train_losses.append(loss.item())
             if _LOG_NEPTUNE:
                 run['train/loss'].log(np.mean(train_losses))
-    # lstm.eval()
-    # lattice.eval()
     model.eval()
     with torch.no_grad():
         valid_losses = []
@@ -148,7 +157,8 @@ for epoch in range(epochs):
             output = model(training_data,quantile)
             
             # Compute loss
-            loss = criterion(output.unsqueeze(-1), target, quantile, type='pinball')
+            loss = criterion(output, target, quantile,
+                             type=params['loss_option'][params['_LOSS']])
             valid_losses.append(loss.item())
     if _LOG_NEPTUNE:
         run['valid/loss'].log(np.mean(valid_losses))
