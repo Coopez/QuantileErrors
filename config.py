@@ -21,4 +21,10 @@ _INPUT_DIM_LATTICE_FIRST_LAYER = 1,
 _EPOCHS = 10,
 _DETERMINISTIC_OPTIMIZATION= False,
 _LOSS = 'pinball',
+
+
+
+
+_REGULAR_OPTIMIZER = 0, #Index of optimizer_option
+optimizer_option = ['Adam', 'RAdam', 'NAdam', 'RMSprop', 'AdamW'],
 )

@@ -104,15 +104,9 @@ if params['_DETERMINISTIC_OPTIMIZATION']:
     minimizer_args = dict(method='SLSQP', options={'disp':True, 'maxiter':100}) # supports a range of methods
     optimizer = MinimizeWrapper(model.parameters(), minimizer_args)
 else:
-    #optimizer = torch.optim.RAdam(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
-    #optimizer = torch.optim.NAdam(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
-    optimizer = torch.optim.Adam(model.parameters(), lr=params['_LEARNING_RATE'])
-    #optimizer = torch.optim.RMSprop(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
-    #optimizer = torch.optim.AdamW(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
+    optimizer = torch.optim.{params['optimizer_option'][params['_REGULAR_OPTIMIZER']]}(model.parameters(), lr=params['_LEARNING_RATE'])
 
 # Training loop
-# lstm.train()
-# lattice.train()
 
 epochs = params['_EPOCHS']
 if params['_DETERMINISTIC_OPTIMIZATION']:
