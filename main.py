@@ -15,7 +15,7 @@ from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
 
 from losses.qr_loss import sqr_loss
-from models.SQR_LSTM_Lattice import SQR_LSTM_Lattice
+from models.LSTM_Lattice import LSTM_Lattice
 import time
 
 from config import _LOG_NEPTUNE
@@ -62,24 +62,33 @@ dataloader = torch.utils.data.DataLoader(data, batch_size=params['_BATCHSIZE'], 
 data_valid = CalibratedDataset(Xv, valid_target, features, window_size=params['_WINDOW_SIZE'], horizon_size=params['_PRED_LENGTH'], device=device)
 data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=params['_BATCHSIZE'], shuffle=True, generator=torch.Generator(device=device))
 
-# Model
-
-#lstm = SQR_LSTM_Lattice(input_size=params['_INPUT_SIZE_LSTM'], hidden_size=params['_HIDDEN_SIZE_LSTM'], layers=params['_NUM_LAYERS_LSTM'], window_size=params['_WINDOW_SIZE'], output_size=1, pred_length=params['_PRED_LENGTH'])
 features_lattice = []
 gen_LSTM_out = np.random.uniform(0, 1, (params['_BATCHSIZE'], 1))
 for i in range(params['_HIDDEN_SIZE_LSTM']):
     features_lattice.append(NumericalFeature(f"feature_{i}", gen_LSTM_out, num_keypoints=params['_NUM_KEYPOINTS']))
 features_lattice.append(NumericalFeature("quantiles", quantiles, num_keypoints=params['_NUM_KEYPOINTS'], monotonicity=enums.Monotonicity.INCREASING))
 
-#lattice = CalibratedLatticeModel(features_lattice, output_min=0, output_max=1, num_layers=params['_NUM_LAYERS_LATTICE'], output_size=params['_PRED_LENGTH'], input_dim_per_lattice=params['_INPUT_DIM_LATTICE_FIRST_LAYER'], num_lattice_first_layer=_NUM_LATTICE_FIRST_LAYER, calibration_keypoints=params['_NUM_KEYPOINTS'])
-
-from models.comb_dummy import LSTM_Lattice
-from pytorch_lattice.enums import (
-    Interpolation,
-    LatticeInit,
-)
-lstm_paras = [params['_INPUT_SIZE_LSTM'], params['_HIDDEN_SIZE_LSTM'], params['_NUM_LAYERS_LSTM'], params['_WINDOW_SIZE'],params['_PRED_LENGTH'],1]
-lattice_paras = [features_lattice, True, 0, 1,LatticeInit.LINEAR,Interpolation.HYPERCUBE,params['_NUM_LAYERS_LATTICE'], params['_INPUT_DIM_LATTICE_FIRST_LAYER'], _NUM_LATTICE_FIRST_LAYER, params['_PRED_LENGTH'], params['_NUM_KEYPOINTS']]
+# Model Definition
+lstm_paras = {
+    'input_size':params['_INPUT_SIZE_LSTM'],
+    'hidden_size':params['_HIDDEN_SIZE_LSTM'],
+    'num_layers':params['_NUM_LAYERS_LSTM'],
+    'window_size':params['_WINDOW_SIZE'],
+    'pred_length':params['_PRED_LENGTH'],
+    }
+lattice_paras = {
+    'features':features_lattice,
+    'clip_inputs': None,
+    'output_min':None,
+    'output_max':None,
+    'kernel_init':None,
+    'interpolation':None,
+    'num_layers':params['_NUM_LAYERS_LATTICE'],
+    'input_dim_per_lattice':params['_INPUT_DIM_LATTICE_FIRST_LAYER'],
+    'num_lattice_first_layer':_NUM_LATTICE_FIRST_LAYER,
+    'output_size':params['_PRED_LENGTH'],
+    'calibration_keypoints':params['_NUM_KEYPOINTS'],
+    }
 model = LSTM_Lattice(lstm_paras, lattice_paras)
 
 # Forward pass
@@ -92,7 +101,7 @@ criterion = sqr_loss
 
 if params['_DETERMINISTIC_OPTIMIZATION']:
     from pytorch_minimize.optim import MinimizeWrapper
-    minimizer_args = dict(method='SLSQP', options={'disp':True, 'maxiter':100})
+    minimizer_args = dict(method='SLSQP', options={'disp':True, 'maxiter':100}) # supports a range of methods
     optimizer = MinimizeWrapper(model.parameters(), minimizer_args)
 else:
     #optimizer = torch.optim.RAdam(list(lstm.parameters()) + list(lattice.parameters()), lr=params['_LEARNING_RATE'])
@@ -166,6 +175,9 @@ DONE - GPU support
 DONE - SQR integration
 DONE - Validation
 DONE - Neptune
+DONE - Optimizer experiments
+DONE - Metric initialization and looking at potential packages
+
 WAIT - GPU optimization: Need more consideration towards optimal batch size, and data loading.
 WAIT - Test
 - Erling sky cam model&data integration

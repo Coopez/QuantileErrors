@@ -11,7 +11,6 @@ from pytorch_lattice.enums import (
     Interpolation,
     LatticeInit,
 )
-import warnings
 
 from pytorch_lattice.utils.models import (
     calibrate_and_stack,
@@ -44,8 +43,8 @@ class CalibratedLatticeModel(nn.Module):
         self,
         features: list[Union[NumericalFeature, CategoricalFeature]],
         clip_inputs: bool = True,
-        output_min: Optional[float] = None,
-        output_max: Optional[float] = None,
+        output_min: Optional[float] = 0,
+        output_max: Optional[float] = 1,
         kernel_init: LatticeInit = LatticeInit.LINEAR,
         interpolation: Interpolation = Interpolation.HYPERCUBE,
         num_layers: int = 1,

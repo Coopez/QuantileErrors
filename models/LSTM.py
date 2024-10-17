@@ -1,21 +1,19 @@
 import torch
-import numpy as np
 import torch.nn as nn  
 
 
-class SQR_LSTM_Lattice(nn.Module):
-    def __init__(self,input_size,hidden_size,layers,window_size,pred_length, output_size = 1):
-        super(SQR_LSTM_Lattice, self).__init__()
+class LSTM(nn.Module):
+    def __init__(self,input_size,hidden_size,num_layers,window_size,pred_length, output_size = 1):
+        super(LSTM, self).__init__()
         self.hidden_size = hidden_size
         self.input_size = input_size
-        self.output_size = output_size
-        self.layers = layers
+        self.num_layers = num_layers
         self.window_size = window_size
         self.pred_length = pred_length
-
+        self.output_size = output_size # non factor as we do not have an output layer
         # The LSTM takes word embeddings as inputs, and outputs hidden states
         # with dimensionality hidden_dim.
-        self.lstm = nn.LSTM(self.input_size, self.hidden_size,num_layers = self.layers,batch_first=True,dtype=torch.float64)
+        self.lstm = nn.LSTM(self.input_size, self.hidden_size,num_layers = self.num_layers,batch_first=True,dtype=torch.float64)
         #self.lt = nn.Linear(self.hidden_size,self.pred_length*self.output_size)
 
         # self.cs = True
