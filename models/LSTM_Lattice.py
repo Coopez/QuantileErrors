@@ -16,7 +16,7 @@ class LSTM_Lattice(nn.Module):
         # x = torch.cat((h, quantile.squeeze(-1)), dim=-1)
         out= []
         for i in range(self.output_size):
-            c = torch.cat((h, quantile[...,i]), dim=-1)
+            c = torch.cat((h, quantile[...,i].unsqueeze(-1)), dim=-1)
             out.append(self.lattice(c))
         out = torch.stack(out, dim=-1)
         #out = self.lattice(x)

@@ -23,7 +23,7 @@ _DETERMINISTIC_OPTIMIZATION= False,
 
 
 
-_LOSS = 1, #Index of loss_option
+_LOSS = 0, #Index of loss_option
 loss_option = ['calibration_sharpness_loss', 'pinball_loss'],
 
 _REGULAR_OPTIMIZER = 0, #Index of optimizer_option

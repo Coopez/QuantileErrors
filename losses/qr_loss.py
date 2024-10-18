@@ -1,6 +1,9 @@
 import torch
+import warnings
 
 def sqr_loss(y_pred,y_true,quantile,type='pinball_loss'):
+    if not (len(y_pred.shape) == len(y_true.shape) == len(quantile.shape)):
+        warnings.warn('All inputs should have the same number of dimensions')
     if type == 'pinball_loss':
         return torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
     elif type == 'calibration_sharpness_loss':
