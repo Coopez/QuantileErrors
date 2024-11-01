@@ -92,11 +92,12 @@ def det_metric(pred, true, daytime=None):
 
     return mae, mse, rmse, mape, mspe
 
-@torch.no_grad()
+
 class nnl_loss:
+    @torch.no_grad()
     def __init__(self, dist_type='Gauss'):
         self.dist_type = dist_type
-
+    @torch.no_grad()
     def __call__(self, pred, truth, return_mean=True, data_scaler=None, return_logits=False):
         # only implemented for univariate predictions so far... 
 
@@ -478,3 +479,94 @@ def point_metric_for_prob(pred,truth,z,scaler=None,daytime=None,z_minus=None,los
         pred = pred[:,:,middle_quantile].unsqueeze(-1)
 
     return det_metric(pred,truth+ (z if z_minus else 0),daytime=daytime)
+
+
+
+class Metrics():
+    @torch.no_grad()
+    def __init__(self, metrics):
+        self.metrics = metrics
+    @torch.no_grad()
+    def __call__(self, pred, truth,input=None, options={}):
+        results = {}
+        for metric in self.metrics:
+            if metric == 'MAE':
+                results['MAE'] = MAE(pred, truth, options)
+            elif metric == 'MSE':
+                results['MSE'] = MSE(pred, truth, options)
+            elif metric == 'RMSE':
+                results['RMSE'] = RMSE(pred, truth, options)
+            elif metric == 'MAPE':
+                results['MAPE'] = MAPE(pred, truth, options)
+            elif metric == 'MSPE':
+                results['MSPE'] = MSPE(pred, truth, options)
+            elif metric == 'RSE':
+                results['RSE'] = RSE(pred, truth)
+            elif metric == 'CORR':
+                results['CORR'] = CORR(pred, truth)
+            elif metric == 'PINAW':
+                results['PINAW'] = PINAW(pred, truth, options)
+            elif metric == 'PICP':
+                results['PICP'] = PICP(pred, truth, options)
+            elif metric == 'ACE':
+                picp = PICP(pred, truth, options)
+                results['ACE'] = ACE(picp)
+            elif metric == 'CRPS':
+                results['CRPS'] = eval_crps(pred, truth, options)
+            elif metric == 'prob_metric':
+                results['prob_metric'] = prob_metric(pred, truth, options)
+            elif metric == 'point_metric_for_prob':
+                results['point_metric_for_prob'] = point_metric_for_prob(pred, truth, options)
+            elif metric == 'nnl_loss':
+                results['nnl_loss'] = nnl_loss(options)(pred, truth, options)
+            elif metric == 'skill_score':
+                assert input is not None, "Input (X) is required for skill score's persistence model"
+                assert 'horizon' in options, "Horizon is required for skill score"
+                assert 'lookback' in options, "Lookback is required for skill score"
+                results['skill_score'] = Skill_score(options["horizon"],options["lookback"])(pred, truth,input)
+            else:
+                raise ValueError(f"Unknown metric: {metric}")
+        return results
+    def print_metrics(self, results):
+        for metric, value in results.items():
+            if isinstance(value, (list, tuple, np.ndarray)):
+                value_str = np.mean(value)
+            else:
+                value_str = value
+            if metric == "Epoch":
+                print(f"{metric}-{value_str}".ljust(8)+"-|", end=' ')
+            else:
+                print((f"{metric}: {value_str:.4f}").ljust(15), end=' ')
+        print(f" ")
+
+
+
+class Skill_score():
+    @torch.no_grad()
+    def __init__(self,horizon,lookback):
+        self.horizon = horizon
+        self.lookback = lookback
+    @torch.no_grad()
+    def __call__(self, y_pred,y,x):
+        persistence = persistence(x)
+
+        return 1 - (torch.sum((y - y_pred)**2)/torch.sum((y - persistence.unsqueeze(-1))**2))
+        
+
+def persistence(x):
+    return x[...,-1,0]
+
+# class Ramp_score():
+#     @torch.no_grad()
+#     def __init__(self,res,LT,epsilon,delta_t,settings):
+#         self.res = res # time resolution
+#         self.LT = LT # Lead time - useless, becasue output will alrad ybe led in the future
+#         self.epsilon = epsilon # threshold
+#         self.settings = settings # settings for the model
+#         self.delta_t = delta_t # tolerance window for the ramp event
+#     @torch.no_grad()
+#     def ramp_event(self, y_pred,y):
+#         for i in range(y.shape[-1]):
+
+#         ORE = torch.max(y[...,])
+#         return 

@@ -105,7 +105,7 @@ if _LOG_NEPTUNE:
     run['model_summary'] = str(model) #str(lstm) + str(lattice)
 
 criterion = sqr_loss
-
+validation_metric = Metrics()
 
 if params['_DETERMINISTIC_OPTIMIZATION']:
     from pytorch_minimize.optim import MinimizeWrapper
