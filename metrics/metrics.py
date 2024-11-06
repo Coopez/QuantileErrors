@@ -483,50 +483,54 @@ def point_metric_for_prob(pred,truth,z,scaler=None,daytime=None,z_minus=None,los
 def pinball_loss(pred, truth, quantiles):
     return torch.mean(torch.max((truth - pred) * quantiles, (pred - truth) * (1 - quantiles)))
 
+
+from losses.qr_loss import sqr_loss
+
 class Metrics():
     @torch.no_grad()
     def __init__(self, metrics):
         self.metrics = metrics
     @torch.no_grad()
-    def __call__(self, pred, truth,input=None,quantile=None, options={}):
+    def __call__(self, pred, truth,input=None,quantile=None,model=None, options={}):
         results = {}
+        if quantile is not None:
+            results['Pinball'] = pinball_loss(pred, truth, quantiles=quantile)
+            results['Beyond'] = sqr_loss(pred, truth, quantile=quantile, type='calibration_sharpness_loss')
         for metric in self.metrics:
+            assert input is not None and model is not None, "If doing complex metrics, we need a full quantile output for which input and model is required"
+            cdf,q = self.approx_cdf(input,model) #TODO needs support for batches - input and quantiles will be incompatible right now
+            median = cdf[...,int(q.shape[0]/2)].unsqueeze(-1)
+
             if metric == 'MAE':
-                results['MAE'] = MAE(pred, truth, options)
+                results['MAE'] = MAE(median, truth)
             elif metric == 'MSE':
-                results['MSE'] = MSE(pred, truth, options)
+                results['MSE'] = MSE(median, truth)
             elif metric == 'RMSE':
-                results['RMSE'] = RMSE(pred, truth, options)
+                results['RMSE'] = RMSE(median, truth)
             elif metric == 'MAPE':
-                results['MAPE'] = MAPE(pred, truth, options)
+                results['MAPE'] = MAPE(median, truth)
             elif metric == 'MSPE':
-                results['MSPE'] = MSPE(pred, truth, options)
+                results['MSPE'] = MSPE(median, truth)
             elif metric == 'RSE':
-                results['RSE'] = RSE(pred, truth)
+                results['RSE'] = RSE(median, truth)
             elif metric == 'CORR':
-                results['CORR'] = CORR(pred, truth)
+                results['CORR'] = CORR(median, truth)
             elif metric == 'PINAW':
-                results['PINAW'] = PINAW(pred, truth, options)
+                results['PINAW'] = PINAW(cdf, truth,quantiles=q)
             elif metric == 'PICP':
-                results['PICP'] = PICP(pred, truth, options)
+                results['PICP'] = PICP(cdf, truth,quantiles=q)
             elif metric == 'ACE':
-                picp = PICP(pred, truth, options)
-                results['ACE'] = ACE(picp)
-            elif metric == 'pinball':
-                results['pinball'] = pinball_loss(pred, truth, quantiles=quantile)
+                assert 'PICP' in results, "ACE requires PICP first."
+                results['ACE'] = ACE(results['PICP'])    
             elif metric == 'CRPS':
                 results['CRPS'] = eval_crps(pred, truth, options)
-            elif metric == 'prob_metric':
-                results['prob_metric'] = prob_metric(pred, truth, options)
-            elif metric == 'point_metric_for_prob':
-                results['point_metric_for_prob'] = point_metric_for_prob(pred, truth, options)
             elif metric == 'nnl_loss':
                 results['nnl_loss'] = nnl_loss(options)(pred, truth, options)
             elif metric == 'skill_score':
                 assert input is not None, "Input (X) is required for skill score's persistence model"
                 assert 'horizon' in options, "Horizon is required for skill score"
                 assert 'lookback' in options, "Lookback is required for skill score"
-                results['skill_score'] = Skill_score(options["horizon"],options["lookback"])(pred, truth,input)
+                results['skill_score'] = Skill_score(options["horizon"],options["lookback"])(median, truth,input)
             else:
                 raise ValueError(f"Unknown metric: {metric}")
         return results
@@ -543,9 +547,27 @@ class Metrics():
             else:
                 print((f"{metric}: {value_str:.4f}").ljust(15), end=' ')
         print(f" ")
+    def approx_cdf(self,input,model):
+        quantiles = torch.tensor([0.05,0.125,0.25,0.375,0.45,0.5,0.55,0.625,0.75,0.875,0.95]).unsqueeze(-1).to(input.device)
+        pred = model(input,quantiles)
+        return pred,quantiles
+    
+    
+
+
 
 def persistence(x):
     return x[...,-1,0]
+
+    
+
+
+
+
+
+
+
+
 
 class Skill_score():
     @torch.no_grad()

@@ -95,7 +95,7 @@ if _LOG_NEPTUNE:
     run['model_summary'] = str(model)
 
 criterion = sqr_loss
-metric = Metrics(metrics=params['_Metrics'])
+metric = Metrics(metrics={})#params['_Metrics'])
 
 if params['_DETERMINISTIC_OPTIMIZATION']:
     from pytorch_minimize.optim import MinimizeWrapper
