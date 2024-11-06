@@ -539,7 +539,8 @@ class Metrics():
                 print((f"{metric}: {value_str:.4f}").ljust(15), end=' ')
         print(f" ")
 
-
+def persistence(x):
+    return x[...,-1,0]
 
 class Skill_score():
     @torch.no_grad()
@@ -548,14 +549,13 @@ class Skill_score():
         self.lookback = lookback
     @torch.no_grad()
     def __call__(self, y_pred,y,x):
-        persistence = persistence(x)
+        pers = persistence(x)
 
-        return 1 - (torch.sum((y - y_pred)**2)/torch.sum((y - persistence.unsqueeze(-1))**2))
+        return 1 - (torch.sum((y - y_pred)**2)/torch.sum((y - pers.unsqueeze(-1))**2))
         
 
-def persistence(x):
-    return x[...,-1,0]
 
+# Ramp score is no good.
 # class Ramp_score():
 #     @torch.no_grad()
 #     def __init__(self,res,LT,epsilon,delta_t,settings):
