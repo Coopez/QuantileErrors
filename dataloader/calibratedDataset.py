@@ -31,7 +31,16 @@ class CalibratedDataset(torch.utils.data.Dataset):
 
         drop_features = list(set(self.X.columns) - set(selected_features))
         self.X.drop(drop_features, inplace=True)
-        self.quantiles = self.X.pop("quantiles") if "quantiles" in self.X.columns else None
+        
+        
+        # find all quantiles in X and pop them into quantiles, stacking them at dim -1
+        quantile_columns = [col for col in self.X.columns if "quantile" in col]
+        if quantile_columns:
+            self.quantiles = torch.stack([torch.from_numpy(self.X.pop(col).values).double() for col in quantile_columns], dim=-1).to(self.device)
+        else:
+            self.quantiles = None
+
+        #self.quantiles = self.X.pop("quantiles") if "quantiles" in self.X.columns else None
 
         self.data = torch.from_numpy(self.X.values).double().to(device) 
         self.targets = torch.from_numpy(self.y)[:, None].double().to(device)
@@ -46,6 +55,6 @@ class CalibratedDataset(torch.utils.data.Dataset):
         y = self.targets[idx + self.window_size : idx + self.window_size + self.horizon_size]
         if self.quantiles is not None:
             q = self.quantiles[idx + self.window_size].repeat(self.window_size)
-            q = torch.from_numpy(q)[:, None].double().to(self.device)
+            #q = torch.from_numpy(q)[:, None].double().to(self.device)
             return [x, q, y]
         return [x, y]

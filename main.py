@@ -17,7 +17,7 @@ from pytorch_lattice.models.features import NumericalFeature
 from losses.qr_loss import sqr_loss
 from models.LSTM_Lattice import LSTM_Lattice
 import time
-from utils.helper_func import generate_quantiles
+from utils.helper_func import generate_quantiles, return_features, return_Dataframe
 from config import _LOG_NEPTUNE
 
 if _LOG_NEPTUNE:
@@ -50,30 +50,21 @@ train,train_target,valid,valid_target = Normalizer.transform_all()
 # Training set
 quantiles = generate_quantiles(len(train),params)
 
-dset = {"irradiance":train,"quantiles":quantiles}
-X = pd.DataFrame(dset)
 y = train_target
+X = return_Dataframe(quantiles,train)
 
 # Validation set
 quantiles_valid = generate_quantiles(len(valid),params)
 
-vset = {"irradiance":valid,"quantiles":quantiles_valid}
-Xv = pd.DataFrame(vset)
-
-# Data TODO continue to add compatibility for multiple quantiles features
-features = [NumericalFeature("irradiance", X["irradiance"].values, num_keypoints=params['_NUM_KEYPOINTS']), 
-            NumericalFeature("quantiles", quantiles, num_keypoints=params['_NUM_KEYPOINTS'], monotonicity=enums.Monotonicity.INCREASING)]
+Xv = return_Dataframe(quantiles_valid,valid)
+features = return_features(quantiles,params,data=train)
 data = CalibratedDataset(X, y, features, window_size=params['_WINDOW_SIZE'], horizon_size=params['_PRED_LENGTH'], device=device) 
 dataloader = torch.utils.data.DataLoader(data, batch_size=params['_BATCHSIZE'], shuffle=True, generator=torch.Generator(device=device))
 
 data_valid = CalibratedDataset(Xv, valid_target, features, window_size=params['_WINDOW_SIZE'], horizon_size=params['_PRED_LENGTH'], device=device)
 data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=params['_BATCHSIZE'], shuffle=True, generator=torch.Generator(device=device))
 
-features_lattice = []
-gen_LSTM_out = np.random.uniform(0, 1, (params['_BATCHSIZE'], 1))
-for i in range(params['_HIDDEN_SIZE_LSTM']):
-    features_lattice.append(NumericalFeature(f"feature_{i}", gen_LSTM_out, num_keypoints=params['_NUM_KEYPOINTS']))
-features_lattice.append(NumericalFeature("quantiles", quantiles, num_keypoints=params['_NUM_KEYPOINTS'], monotonicity=enums.Monotonicity.INCREASING))
+features_lattice = return_features(quantiles,params,data=None,LSTM_out=params['_HIDDEN_SIZE_LSTM'])
 
 # Model Definition
 lstm_paras = {
@@ -102,7 +93,7 @@ model = LSTM_Lattice(lstm_paras, lattice_paras,
 # Forward pass
 # Define loss function and optimizer
 if _LOG_NEPTUNE:
-    run['model_summary'] = str(model) #str(lstm) + str(lattice)
+    run['model_summary'] = str(model)
 
 criterion = sqr_loss
 validation_metric = Metrics()
@@ -129,7 +120,7 @@ for epoch in range(epochs):
             def closure():
                 optimizer.zero_grad()
                 output = model(training_data,quantile)
-                loss = criterion(output, target, quantile,
+                loss = criterion(output, target, quantile.unsqueeze(-1),
                                  type=params['loss_option'][params['_LOSS']])
                 #loss.backward()
                 return loss
@@ -138,7 +129,7 @@ for epoch in range(epochs):
             # Normal forward pass
             output = model(training_data,quantile)
             # Compute loss
-            loss = criterion(output, target, quantile,
+            loss = criterion(output, target, quantile.unsqueeze(-1),
                              type=params['loss_option'][params['_LOSS']])
             
             #Backward pass and optimization
@@ -157,7 +148,7 @@ for epoch in range(epochs):
             output = model(training_data,quantile)
             
             # Compute loss
-            loss = criterion(output, target, quantile,
+            loss = criterion(output, target, quantile.unsqueeze(-1),
                              type=params['loss_option'][params['_LOSS']])
             valid_losses.append(loss.item())
     if _LOG_NEPTUNE:
