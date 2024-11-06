@@ -28,4 +28,10 @@ loss_option = ['calibration_sharpness_loss', 'pinball_loss'],
 
 _REGULAR_OPTIMIZER = 0, #Index of optimizer_option
 optimizer_option = ['Adam', 'RAdam', 'NAdam', 'RMSprop', 'AdamW'],
+
+
+_Metrics =  {"pinball": None}#{"RMSE": None, "MAE": None, "skill_score": None}
+
+
+
 )

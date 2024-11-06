@@ -4,13 +4,16 @@ from models.Calibrated_lattice_model import CalibratedLatticeModel
 from models.LSTM import LSTM
 
 class LSTM_Lattice(nn.Module):
-    def __init__(self,lstm_paras: dict,lattice_paras: dict,loss_option: str='pinball'):
+    def __init__(self,lstm_paras: dict,lattice_paras: dict,params: dict):
         super(LSTM_Lattice, self).__init__()
 
         self.lstm = LSTM(**{k: v for k, v in lstm_paras.items() if v is not None})
         self.lattice = CalibratedLatticeModel(**{k: v for k, v in lattice_paras.items() if v is not None})
+        
+        self.double_run = True if params['loss_option'][params['_LOSS']] == 'calibration_sharpness_loss' else False
+        self.output_size = params['_PRED_LENGTH']
 
-        self.output_size = 2 if loss_option == 'calibration_sharpness_loss' else 1
+
     def forward(self, x: torch.tensor,quantile: torch.tensor, cs=None):
         h= self.lstm(x)
         # x = torch.cat((h, quantile.squeeze(-1)), dim=-1)
@@ -19,8 +22,15 @@ class LSTM_Lattice(nn.Module):
             c = torch.cat((h, quantile[...,i].unsqueeze(-1)), dim=-1)
             out.append(self.lattice(c))
         out = torch.stack(out, dim=-1)
-        #out = self.lattice(x)
-        # h = self.lstm(x)
-        # c = torch.cat((h, quantile.squeeze(-1)), dim=-1)
-        # out = self.lattice(c)
+
+        if self.double_run: # we are doing a double run as we need output for 1-quantile
+            out = out.squeeze(-1)
+            neg_quantile = 1-quantile.detach().clone()
+            out_2 = []
+            for i in range(self.output_size):
+                c = torch.cat((h, neg_quantile[...,i].unsqueeze(-1)), dim=-1)
+                out_2.append(self.lattice(c))
+            out_2 = torch.stack(out_2, dim=-1).squeeze(-1)
+            out = torch.stack([out, out_2], dim=-1)
+
         return out

@@ -480,14 +480,15 @@ def point_metric_for_prob(pred,truth,z,scaler=None,daytime=None,z_minus=None,los
 
     return det_metric(pred,truth+ (z if z_minus else 0),daytime=daytime)
 
-
+def pinball_loss(pred, truth, quantiles):
+    return torch.mean(torch.max((truth - pred) * quantiles, (pred - truth) * (1 - quantiles)))
 
 class Metrics():
     @torch.no_grad()
     def __init__(self, metrics):
         self.metrics = metrics
     @torch.no_grad()
-    def __call__(self, pred, truth,input=None, options={}):
+    def __call__(self, pred, truth,input=None,quantile=None, options={}):
         results = {}
         for metric in self.metrics:
             if metric == 'MAE':
@@ -511,6 +512,8 @@ class Metrics():
             elif metric == 'ACE':
                 picp = PICP(pred, truth, options)
                 results['ACE'] = ACE(picp)
+            elif metric == 'pinball':
+                results['pinball'] = pinball_loss(pred, truth, quantiles=quantile)
             elif metric == 'CRPS':
                 results['CRPS'] = eval_crps(pred, truth, options)
             elif metric == 'prob_metric':
@@ -533,8 +536,10 @@ class Metrics():
                 value_str = np.mean(value)
             else:
                 value_str = value
-            if metric == "Epoch":
-                print(f"{metric}-{value_str}".ljust(8)+"-|", end=' ')
+            if metric == "Time":
+                print(f"{value_str} s".ljust(8)+"-|", end=' ')
+            elif metric == "Epoch":
+                print("Epoch:" + value_str, end=' ')
             else:
                 print((f"{metric}: {value_str:.4f}").ljust(15), end=' ')
         print(f" ")

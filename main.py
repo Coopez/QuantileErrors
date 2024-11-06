@@ -2,13 +2,12 @@ import torch
 device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
 torch.set_default_device(device)
 #TODO GPU performance is worse than CPU unless batch size is increased. Maybe need better data loading.
-
-
-
-import pytorch_lattice.enums as enums
-
 import numpy as np
 import pandas as pd
+import pytorch_lattice.enums as enums
+import time
+
+from metrics.metrics import Metrics
 from res.data import data_import, Data_Normalizer
 
 from dataloader.calibratedDataset import CalibratedDataset
@@ -16,7 +15,7 @@ from pytorch_lattice.models.features import NumericalFeature
 
 from losses.qr_loss import sqr_loss
 from models.LSTM_Lattice import LSTM_Lattice
-import time
+
 from utils.helper_func import generate_quantiles, return_features, return_Dataframe
 from config import _LOG_NEPTUNE
 
@@ -88,7 +87,7 @@ lattice_paras = {
     'calibration_keypoints':params['_NUM_KEYPOINTS'],
     }
 model = LSTM_Lattice(lstm_paras, lattice_paras,
-                     loss_option=params['loss_option'][params['_LOSS']])
+                     params=params)
 
 # Forward pass
 # Define loss function and optimizer
@@ -96,7 +95,7 @@ if _LOG_NEPTUNE:
     run['model_summary'] = str(model)
 
 criterion = sqr_loss
-validation_metric = Metrics()
+metric = Metrics(metrics=params['_Metrics'])
 
 if params['_DETERMINISTIC_OPTIMIZATION']:
     from pytorch_minimize.optim import MinimizeWrapper
@@ -107,7 +106,7 @@ else:
     optimizer = optimizer_class(model.parameters(), lr=params['_LEARNING_RATE'])
 
 # Training loop
-
+extra_options = {"lookback": params["_WINDOW_SIZE"], "horizon": params["_PRED_LENGTH"]}
 epochs = params['_EPOCHS']
 if params['_DETERMINISTIC_OPTIMIZATION']:
     epochs = 1
@@ -141,20 +140,30 @@ for epoch in range(epochs):
                 run['train/loss'].log(np.mean(train_losses))
     model.eval()
     with torch.no_grad():
-        valid_losses = []
+        #valid_losses = []
+        metric_dict = {}
         for batch in data_loader_valid:
             training_data, quantile, target = batch
             # Forward pass
             output = model(training_data,quantile)
             
             # Compute loss
-            loss = criterion(output, target, quantile.unsqueeze(-1),
-                             type=params['loss_option'][params['_LOSS']])
-            valid_losses.append(loss.item())
-    if _LOG_NEPTUNE:
-        run['valid/loss'].log(np.mean(valid_losses))
+              #criterion(output, target, quantile.unsqueeze(-1),
+                    #         type=params['loss_option'][params['_LOSS']])
+            loss = metric(output, target.type(torch.double),quantile=quantile,options = extra_options)
+            for key, value in loss.items():
+                if key in metric_dict:
+                    metric_dict[key].append(value.item())
+                else:
+                    metric_dict[key] = [value.item()]
+            #valid_losses.append(loss.item())
+    if _LOG_NEPTUNE: #TODO update to new metrics
+        pass#run['valid/loss'].log(np.mean(valid_losses))
+    
     epoch_time = time.time() - start_time
-    print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}, Time: {epoch_time:.2f}s")
+    step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time , "Loss": np.mean(train_losses)}
+    metric.print_metrics({**step_meta, **metric_dict})
+    # print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}, Time: {epoch_time:.2f}s")
 
 
 if _LOG_NEPTUNE:

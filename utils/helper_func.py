@@ -6,7 +6,7 @@ from pytorch_lattice.enums import Monotonicity
 
 def generate_quantiles(length: int, params: dict):
     quantiles = np.random.uniform(0,1,length)
-    quantiles = np.stack([quantiles,1-quantiles],axis=-1) if params['loss_option'][params['_LOSS']] == 'calibration_sharpness_loss' else quantiles
+    #quantiles = np.stack([quantiles,1-quantiles],axis=-1) if params['loss_option'][params['_LOSS']] == 'calibration_sharpness_loss' else quantiles
     return quantiles
 
 def return_features(quantiles:np.ndarray,params:dict,data:np.ndarray = None,LSTM_out: int=None):
