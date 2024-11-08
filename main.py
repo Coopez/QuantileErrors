@@ -95,7 +95,7 @@ if _LOG_NEPTUNE:
     run['model_summary'] = str(model)
 
 criterion = sqr_loss
-metric = Metrics(metrics={})#params['_Metrics'])
+metric = Metrics(params['_Metrics']) #metrics={})#params['_Metrics'])
 
 if params['_DETERMINISTIC_OPTIMIZATION']:
     from pytorch_minimize.optim import MinimizeWrapper
@@ -150,18 +150,23 @@ for epoch in range(epochs):
             # Compute loss
               #criterion(output, target, quantile.unsqueeze(-1),
                     #         type=params['loss_option'][params['_LOSS']])
-            loss = metric(output, target.type(torch.double),quantile=quantile,options = extra_options)
+            loss = metric(output, target.type(torch.double),input=training_data ,model=model,quantile=quantile.unsqueeze(-1),options = extra_options)
             for key, value in loss.items():
-                if key in metric_dict:
-                    metric_dict[key].append(value.item())
+                # value is a tensor, we need to extract the value, but they may be a dict
+                if isinstance(value, dict):
+                    value = [v.item() for v in value.values()]
                 else:
-                    metric_dict[key] = [value.item()]
-            #valid_losses.append(loss.item())
+                    value = value.item()
+                if key in metric_dict:
+                    metric_dict[key].append(value)
+                else:
+                    metric_dict[key] = [value]
+                #valid_losses.append(loss.item())
     if _LOG_NEPTUNE: #TODO update to new metrics
         pass#run['valid/loss'].log(np.mean(valid_losses))
     
     epoch_time = time.time() - start_time
-    step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time , "Loss": np.mean(train_losses)}
+    step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time , "Train_Loss": np.mean(train_losses)}
     metric.print_metrics({**step_meta, **metric_dict})
     # print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}, Time: {epoch_time:.2f}s")
 

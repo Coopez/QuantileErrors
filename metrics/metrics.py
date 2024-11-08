@@ -300,7 +300,7 @@ def PICP(pred, truth, intervals=[0.1,0.25, 0.5, 0.75, 0.9], quantiles=None, retu
             else: 
                 count_correct = np.concatenate([(truth >= ci_l), (truth <= ci_u)], -1).all(-1).sum()
             if return_counts: 
-                _scores[np.round(interval_i, 5)] = np.array([count_correct, truth.shape[0]])
+                _scores[np.round(interval_i, 5)] = torch.stack([count_correct, torch.tensor(truth.shape[0])])
             else: 
                 _scores[np.round(interval_i, 5)] = count_correct / truth.shape[0]
 
@@ -308,8 +308,8 @@ def PICP(pred, truth, intervals=[0.1,0.25, 0.5, 0.75, 0.9], quantiles=None, retu
 
 @torch.no_grad()
 def ACE(picp):
-    ace = np.mean([np.abs(k - v) for k, v in picp.items()])
-    return np.round(ace,5)
+    ace = torch.mean(torch.stack([torch.abs(k - v) for k, v in picp.values()]),dtype=torch.float64)
+    return ace
 
 @torch.no_grad()
 def sharpness(pred, intervals=[0.2, 0.5, 0.9], quantiles=None, return_counts=True):
@@ -479,8 +479,11 @@ def point_metric_for_prob(pred,truth,z,scaler=None,daytime=None,z_minus=None,los
         pred = pred[:,:,middle_quantile].unsqueeze(-1)
 
     return det_metric(pred,truth+ (z if z_minus else 0),daytime=daytime)
-
+import warnings
 def pinball_loss(pred, truth, quantiles):
+    if not (len(pred.shape) == len(truth.shape) == len(quantiles.shape)):
+        warnings.warn('All inputs should have the same number of dimensions')
+    
     return torch.mean(torch.max((truth - pred) * quantiles, (pred - truth) * (1 - quantiles)))
 
 
@@ -499,7 +502,7 @@ class Metrics():
         for metric in self.metrics:
             assert input is not None and model is not None, "If doing complex metrics, we need a full quantile output for which input and model is required"
             cdf,q = self.approx_cdf(input,model) #TODO needs support for batches - input and quantiles will be incompatible right now
-            median = cdf[...,int(q.shape[0]/2)].unsqueeze(-1)
+            median = cdf[...,int(len(q)/2)].unsqueeze(-1)
 
             if metric == 'MAE':
                 results['MAE'] = MAE(median, truth)
@@ -518,12 +521,14 @@ class Metrics():
             elif metric == 'PINAW':
                 results['PINAW'] = PINAW(cdf, truth,quantiles=q)
             elif metric == 'PICP':
-                results['PICP'] = PICP(cdf, truth,quantiles=q)
+                results['PICP'] = PICP(cdf, truth,quantiles=q,return_counts=False)
             elif metric == 'ACE':
-                assert 'PICP' in results, "ACE requires PICP first."
-                results['ACE'] = ACE(results['PICP'])    
+                picp = PICP(cdf, truth,quantiles=q)
+                results['ACE'] = ACE(picp)    
             elif metric == 'CRPS':
-                results['CRPS'] = eval_crps(pred, truth, options)
+                results['CRPS'] = eval_crps(cdf, truth, options)
+            elif metric == 'Calibration':
+                results['Calibration'] = PICP_quantile(cdf, truth,quantiles=q)
             elif metric == 'nnl_loss':
                 results['nnl_loss'] = nnl_loss(options)(pred, truth, options)
             elif metric == 'skill_score':
@@ -544,13 +549,20 @@ class Metrics():
                 print(f"{value_str} s".ljust(8)+"-|", end=' ')
             elif metric == "Epoch":
                 print("Epoch:" + value_str, end=' ')
+            elif metric == "PICP":
+                pass # we don't want to print this
             else:
                 print((f"{metric}: {value_str:.4f}").ljust(15), end=' ')
         print(f" ")
     def approx_cdf(self,input,model):
-        quantiles = torch.tensor([0.05,0.125,0.25,0.375,0.45,0.5,0.55,0.625,0.75,0.875,0.95]).unsqueeze(-1).to(input.device)
-        pred = model(input,quantiles)
-        return pred,quantiles
+        quantiles = [0.05,0.125,0.25,0.375,0.45,0.5,0.55,0.625,0.75,0.875,0.95]
+        cdf = []
+        for q in quantiles:
+            q_in = torch.tensor(q).repeat(input.shape[0],1).to(input.device)
+            pred = model(input,q_in,valid_run=True)
+            cdf.append(pred)
+        cdf = torch.stack(cdf,dim=-1).squeeze(-2)
+        return cdf,quantiles
     
     
 

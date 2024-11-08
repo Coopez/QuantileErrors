@@ -14,7 +14,7 @@ class LSTM_Lattice(nn.Module):
         self.output_size = params['_PRED_LENGTH']
 
 
-    def forward(self, x: torch.tensor,quantile: torch.tensor, cs=None):
+    def forward(self, x: torch.tensor,quantile: torch.tensor, cs=None, valid_run=False):
         h= self.lstm(x)
         # x = torch.cat((h, quantile.squeeze(-1)), dim=-1)
         out= []
@@ -23,7 +23,7 @@ class LSTM_Lattice(nn.Module):
             out.append(self.lattice(c))
         out = torch.stack(out, dim=-1)
 
-        if self.double_run: # we are doing a double run as we need output for 1-quantile
+        if self.double_run and not valid_run: # we are doing a double run as we need output for 1-quantile
             out = out.squeeze(-1)
             neg_quantile = 1-quantile.detach().clone()
             out_2 = []
