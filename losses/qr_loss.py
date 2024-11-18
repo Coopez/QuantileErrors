@@ -18,6 +18,30 @@ def sqr_loss(y_pred,y_true,quantile,type='pinball_loss'):
         raise ValueError('Unknown loss type')
     return None
 
+class SQR_loss():
+    def __init__(self,type='pinball_loss',lambda_=0.5):
+        self.type = type
+        self.lambda_ = lambda_ # lambda for calibration_sharpness_loss, determining weight of sharpness component
+    def __call__(self,y_pred,y_true,quantile):
+        if not (len(y_pred.shape) == len(y_true.shape) == len(quantile.shape)):
+            warnings.warn('All inputs should have the same number of dimensions')
+        if self.type == 'pinball_loss':
+            return torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
+        elif self.type == 'calibration_sharpness_loss':
+            # Expects y_pred to be of size (batch_size,window_size,2) for quantile and 1-quantile
+            assert y_pred.shape[2] == 2, 'y_pred should have quantile and 1-quantile'
+            calibration = calibration_loss(y_pred[...,0].unsqueeze(-1),y_true,quantile)
+            sharpness = sharpness_loss(y_pred,quantile)
+            loss = (1-self.lambda_)*calibration + self.lambda_*sharpness
+            # with torch.no_grad():
+            #     qloss = torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
+            #     print(f"calibration: {calibration}, qloss: {qloss}, diff: {calibration-qloss}")
+            return loss
+        else:
+            raise ValueError('Unknown loss type')
+        return None
+    
+
 def calibration_loss(y_pred,y_true,quantile):
     pp = predicted_probability(y_pred,y_true)
     loss = torch.mean(

@@ -53,8 +53,17 @@ class CalibratedDataset(torch.utils.data.Dataset):
         #     idx = idx.tolist()
         x = self.data[idx : idx + self.window_size]
         y = self.targets[idx + self.window_size : idx + self.window_size + self.horizon_size]
-        if self.quantiles is not None:
-            q = self.quantiles[idx + self.window_size].repeat(self.window_size)
-            #q = torch.from_numpy(q)[:, None].double().to(self.device)
-            return [x, q, y]
+        # if self.quantiles is not None:
+        #     quantile = torch.rand(1,dtype=torch.double, device = self.device)
+        #     # expand q to x
+        #     q = quantile.repeat(self.window_size)
+        #     #q = self.quantiles[idx + self.window_size]
+        #     #q = torch.from_numpy(q)[:, None].double().to(self.device)
+        #     return [x, q,y]
         return [x, y]
+    def return_quantile(self,batchsize):
+        #quantile = torch.rand((batchsize),dtype=torch.double, device = self.device)
+        #quantiles = quantile.repeat(self.window_size,1).reshape(batchsize,self.window_size)
+        quantile = torch.rand(1,dtype=torch.double, device = self.device)
+        quantiles = quantile.repeat(batchsize,self.window_size)
+        return quantiles

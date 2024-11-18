@@ -487,18 +487,23 @@ def pinball_loss(pred, truth, quantiles):
     return torch.mean(torch.max((truth - pred) * quantiles, (pred - truth) * (1 - quantiles)))
 
 
-from losses.qr_loss import sqr_loss
+from losses.qr_loss import SQR_loss
 
 class Metrics():
     @torch.no_grad()
-    def __init__(self, metrics):
-        self.metrics = metrics
+    def __init__(self,params):
+        self.metrics = params["_Metrics"]
+        self.params = params
+        self.lambda_ = params["_BEYOND_LAMBDA"] 
+        self.batchsize = params["_BATCHSIZE"]
+
     @torch.no_grad()
     def __call__(self, pred, truth,input=None,quantile=None,model=None, options={}):
         results = {}
         if quantile is not None:
             results['Pinball'] = pinball_loss(pred, truth, quantiles=quantile)
-            results['Beyond'] = sqr_loss(pred, truth, quantile=quantile, type='calibration_sharpness_loss')
+            beyond_loss = SQR_loss(type='pinball_loss',lambda_=self.lambda_)
+            results['Beyond'] = beyond_loss(pred, truth, quantile=quantile)
         for metric in self.metrics:
             assert input is not None and model is not None, "If doing complex metrics, we need a full quantile output for which input and model is required"
             cdf,q = self.approx_cdf(input,model) #TODO needs support for batches - input and quantiles will be incompatible right now
@@ -524,7 +529,7 @@ class Metrics():
                 results['PICP'] = PICP(cdf, truth,quantiles=q,return_counts=False)
             elif metric == 'ACE':
                 picp = PICP(cdf, truth,quantiles=q)
-                results['ACE'] = ACE(picp)    
+                results['ACE'] = ACE(picp)/self.batchsize    
             elif metric == 'CRPS':
                 results['CRPS'] = eval_crps(cdf, truth, options)
             elif metric == 'Calibration':
@@ -546,7 +551,7 @@ class Metrics():
             else:
                 value_str = value
             if metric == "Time":
-                print(f"{value_str} s".ljust(8)+"-|", end=' ')
+                print(f"{value_str:.1f}s".ljust(8)+"-|", end=' ')
             elif metric == "Epoch":
                 print("Epoch:" + value_str, end=' ')
             elif metric == "PICP":

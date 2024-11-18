@@ -6,17 +6,19 @@ import numpy as np
 import pandas as pd
 import pytorch_lattice.enums as enums
 import time
-
+### Debug tool################
+from debug.plot import Debug_model
+##############################
 from metrics.metrics import Metrics
 from res.data import data_import, Data_Normalizer
 
 from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
 
-from losses.qr_loss import sqr_loss
+from losses.qr_loss import SQR_loss
 from models.LSTM_Lattice import LSTM_Lattice
 
-from utils.helper_func import generate_quantiles, return_features, return_Dataframe
+from utils.helper_func import generate_surrogate_quantiles, return_features, return_Dataframe
 from config import _LOG_NEPTUNE
 
 if _LOG_NEPTUNE:
@@ -47,13 +49,13 @@ Normalizer = Data_Normalizer(train,train_target,valid,valid_target)
 train,train_target,valid,valid_target = Normalizer.transform_all()
 
 # Training set
-quantiles = generate_quantiles(len(train),params)
+quantiles = generate_surrogate_quantiles(len(train),params)
 
 y = train_target
 X = return_Dataframe(quantiles,train)
 
 # Validation set
-quantiles_valid = generate_quantiles(len(valid),params)
+quantiles_valid = generate_surrogate_quantiles(len(valid),params)
 
 Xv = return_Dataframe(quantiles_valid,valid)
 features = return_features(quantiles,params,data=train)
@@ -94,8 +96,8 @@ model = LSTM_Lattice(lstm_paras, lattice_paras,
 if _LOG_NEPTUNE:
     run['model_summary'] = str(model)
 
-criterion = sqr_loss
-metric = Metrics(params['_Metrics']) #metrics={})#params['_Metrics'])
+criterion = SQR_loss(type=params['loss_option'][params['_LOSS']], lambda_=params['_BEYOND_LAMBDA'])
+metric = Metrics(params)
 
 if params['_DETERMINISTIC_OPTIMIZATION']:
     from pytorch_minimize.optim import MinimizeWrapper
@@ -114,13 +116,13 @@ for epoch in range(epochs):
     start_time = time.time()
     train_losses = []
     model.train()
-    for training_data, quantile, target in dataloader:
+    for training_data, target in dataloader:
+        quantile = data.return_quantile(training_data.shape[0])
         if params['_DETERMINISTIC_OPTIMIZATION']:
             def closure():
                 optimizer.zero_grad()
                 output = model(training_data,quantile)
-                loss = criterion(output, target, quantile.unsqueeze(-1),
-                                 type=params['loss_option'][params['_LOSS']])
+                loss = criterion(output, target, quantile.unsqueeze(-1))
                 #loss.backward()
                 return loss
             optimizer.step(closure)
@@ -128,8 +130,7 @@ for epoch in range(epochs):
             # Normal forward pass
             output = model(training_data,quantile)
             # Compute loss
-            loss = criterion(output, target, quantile.unsqueeze(-1),
-                             type=params['loss_option'][params['_LOSS']])
+            loss = criterion(output, target, quantile.unsqueeze(-1))
             
             #Backward pass and optimization
             optimizer.zero_grad()
@@ -143,13 +144,17 @@ for epoch in range(epochs):
         #valid_losses = []
         metric_dict = {}
         for batch in data_loader_valid:
-            training_data, quantile, target = batch
+            
+            training_data, target = batch
+            quantile = data_valid.return_quantile(training_data.shape[0])
             # Forward pass
             output = model(training_data,quantile)
             
             # Compute loss
               #criterion(output, target, quantile.unsqueeze(-1),
                     #         type=params['loss_option'][params['_LOSS']])
+            #deb = Debug_model(model,training_data,quantile)
+            #deb.plot_out()
             loss = metric(output, target.type(torch.double),input=training_data ,model=model,quantile=quantile.unsqueeze(-1),options = extra_options)
             for key, value in loss.items():
                 # value is a tensor, we need to extract the value, but they may be a dict

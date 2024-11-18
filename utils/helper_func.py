@@ -4,8 +4,10 @@ from pytorch_lattice.models.features import NumericalFeature
 from pytorch_lattice.enums import Monotonicity
 
 
-def generate_quantiles(length: int, params: dict):
+def generate_surrogate_quantiles(length: int, params: dict):
+    #quantiles = np.random.uniform(0,1,length)
     quantiles = np.random.uniform(0,1,length)
+    #quantiles = np.repeat(quantiles, length)
     #quantiles = np.stack([quantiles,1-quantiles],axis=-1) if params['loss_option'][params['_LOSS']] == 'calibration_sharpness_loss' else quantiles
     return quantiles
 
