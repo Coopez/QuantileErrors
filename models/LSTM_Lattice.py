@@ -8,7 +8,12 @@ class LSTM_Lattice(nn.Module):
         super(LSTM_Lattice, self).__init__()
 
         self.lstm = LSTM(**{k: v for k, v in lstm_paras.items() if v is not None})
-        self.lattice = CalibratedLatticeModel(**{k: v for k, v in lattice_paras.items() if v is not None})
+        if params['_model_options'][params['_MODEL']] == 'LSTM_Lattice':
+            self.out = CalibratedLatticeModel(**{k: v for k, v in lattice_paras.items() if v is not None})
+        elif params['_model_options'][params['_MODEL']] == 'LSTM_Linear':
+            self.out = nn.Linear(lstm_paras['hidden_size']+1, params['_PRED_LENGTH'],dtype=torch.float64) # +1 for quantile
+        else:
+            raise ValueError('Model not implemented')
         
         self.double_run = True if params['loss_option'][params['_LOSS']] == 'calibration_sharpness_loss' else False
         self.output_size = params['_PRED_LENGTH']
@@ -20,7 +25,7 @@ class LSTM_Lattice(nn.Module):
         out= []
         for i in range(self.output_size):
             c = torch.cat((h, quantile[...,i].unsqueeze(-1)), dim=-1)
-            out.append(self.lattice(c))
+            out.append(self.out(c))
         out = torch.stack(out, dim=-1)
 
         if self.double_run and not valid_run: # we are doing a double run as we need output for 1-quantile
@@ -29,7 +34,7 @@ class LSTM_Lattice(nn.Module):
             out_2 = []
             for i in range(self.output_size):
                 c = torch.cat((h, neg_quantile[...,i].unsqueeze(-1)), dim=-1)
-                out_2.append(self.lattice(c))
+                out_2.append(self.out(c))
             out_2 = torch.stack(out_2, dim=-1).squeeze(-1)
             out = torch.stack([out, out_2], dim=-1)
 
