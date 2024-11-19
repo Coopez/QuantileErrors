@@ -19,10 +19,11 @@ from losses.qr_loss import SQR_loss
 from models.LSTM_Lattice import LSTM_Lattice
 
 from utils.helper_func import generate_surrogate_quantiles, return_features, return_Dataframe
-from config import _LOG_NEPTUNE
+from config import _LOG_NEPTUNE, _VERBOSE
 
 if _LOG_NEPTUNE:
     import neptune
+    from neptune.utils import stringify_unsupported
     from config import _DATA_DESCRIPTION
     from api_key import _NEPTUNE_API_TOKEN
     run = neptune.init_run(
@@ -38,7 +39,7 @@ torch.manual_seed(params['_RANDOM_SEED'])
 
 _NUM_LATTICE_FIRST_LAYER = params['_HIDDEN_SIZE_LSTM'] + 1
 if _LOG_NEPTUNE:
-    run['parameters'] = params
+    run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
     
 train,train_target,valid,valid_target,_,_ = data_import()
 train = train[:,11]
@@ -97,7 +98,7 @@ if _LOG_NEPTUNE:
     run['model_summary'] = str(model)
 
 criterion = SQR_loss(type=params['loss_option'][params['_LOSS']], lambda_=params['_BEYOND_LAMBDA'])
-metric = Metrics(params)
+metric = Metrics(params,Normalizer)
 
 if params['_DETERMINISTIC_OPTIMIZATION']:
     from pytorch_minimize.optim import MinimizeWrapper
@@ -138,7 +139,7 @@ for epoch in range(epochs):
             optimizer.step()
             train_losses.append(loss.item())
             if _LOG_NEPTUNE:
-                run['train/loss'].log(np.mean(train_losses))
+                run['train/'+params['loss_option'][params['_LOSS']]].log(np.mean(train_losses))
     model.eval()
     with torch.no_grad():
         #valid_losses = []
@@ -158,22 +159,32 @@ for epoch in range(epochs):
             loss = metric(output, target.type(torch.double),input=training_data ,model=model,quantile=quantile.unsqueeze(-1),options = extra_options)
             for key, value in loss.items():
                 # value is a tensor, we need to extract the value, but they may be a dict
-                if isinstance(value, dict):
-                    value = [v.item() for v in value.values()]
-                else:
-                    value = value.item()
+                # if isinstance(value, dict):
+                #     value = [v.item() for v in value.values()]
+                # else:
+                #     value = value.item()
+                
                 if key in metric_dict:
                     metric_dict[key].append(value)
                 else:
                     metric_dict[key] = [value]
                 #valid_losses.append(loss.item())
-    if _LOG_NEPTUNE: #TODO update to new metrics
-        pass#run['valid/loss'].log(np.mean(valid_losses))
+    if _LOG_NEPTUNE:
+        #log all metrics in metric_dict to neptune
+        for key, value in metric_dict.items():
+            # test if value is a list 
+            if isinstance(value[0], np.ndarray): # need to check if in the list of batch accumulated values we have an array
+                    value = np.stack(value,axis=-1).mean(axis=-1).tolist()
+                    run['valid/'+key].log(stringify_unsupported(value))
+            else:
+                run['valid/'+key].log(np.mean(value))
+
     
     epoch_time = time.time() - start_time
     step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time , "Train_Loss": np.mean(train_losses)}
-    metric.print_metrics({**step_meta, **metric_dict})
-    # print(f"Epoch {epoch+1:02d}/{epochs}, Loss: {np.mean(train_losses):.6f}, Validation Loss: {np.mean(valid_losses):.6f}, Time: {epoch_time:.2f}s")
+    if _VERBOSE:
+        metric.print_metrics({**step_meta, **metric_dict})
+
 
 
 if _LOG_NEPTUNE:
@@ -191,11 +202,18 @@ DONE - Validation
 DONE - Neptune
 DONE - Optimizer experiments
 DONE - Metric initialization and looking at potential packages
+DONE - Data denorm for validation
+DONE  - Update Neptune
 
-WAIT - GPU optimization: Need more consideration towards optimal batch size, and data loading.
+
+WAIT - GPU optimization: Batch size, Data loading
 WAIT - Test
-- Erling sky cam model&data integration
+50%  - Erling sky cam model&data integration
 WAIT - More Loss functions
-- Probabilistic Metrics
+60%  - Probabilistic Metrics
 
+00 % - Metrics which list??
+
+
+Need to log/check quantile epoch distribution?
 """

@@ -132,6 +132,8 @@ class Data_Normalizer():
             self.min_test_target = np.min(test_target)
             self.max_test_target = np.max(test_target)
             
+
+    ## Helper functions, not supposed to be called directly
     def apply_minmax(self,var:str):
         return (self.__dict__[var] - self.__dict__[f"min_{var}"])/(self.__dict__[f"max_{var}"] - self.__dict__[f"min_{var}"])
     def reverse_minmax(self,var:str):
@@ -140,7 +142,7 @@ class Data_Normalizer():
         return (data - self.__dict__[f"min_{var}"])/(self.__dict__[f"max_{var}"] - self.__dict__[f"min_{var}"])
     def reverse_minmax_on_data(self,var:str,data: np.ndarray):
         return (data*(self.__dict__[f"max_{var}"] - self.__dict__[f"min_{var}"])) + self.__dict__[f"min_{var}"]
-    
+    #######################################
     def transform_all(self):
         """
         Apply min-max normalization to all datasets.
@@ -149,18 +151,20 @@ class Data_Normalizer():
             tuple: Normalized train, train_target, valid, valid_target, test, test_target datasets.
         """
         local = []
+
+        ## need to apply train min-max to all datasets as if they are not observable
         if self.train is not None:
             local.append(self.apply_minmax("train"))
         if self.train_target is not None:
             local.append(self.apply_minmax("train_target"))
         if self.valid is not None:
-            local.append(self.apply_minmax("valid"))
+            local.append(self.apply_minmax("train"))
         if self.valid_target is not None:
-            local.append(self.apply_minmax("valid_target"))
+            local.append(self.apply_minmax("train_target"))
         if self.test is not None:
-            local.append(self.apply_minmax("test"))
+            local.append(self.apply_minmax("train"))
         if self.test_target is not None:
-            local.append(self.apply_minmax("test_target"))
+            local.append(self.apply_minmax("train_target"))
 
         return local
     

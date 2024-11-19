@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torch.distributions as distribution
 
-
+from torch.nn import MSELoss, L1Loss
 
 def RSE(pred, true): # why is this scaled by the difference in true to true mean - Some kind of Normalization
     return np.sqrt(np.sum((true - pred) ** 2)) / np.sqrt(np.sum((true - true.mean()) ** 2))
@@ -491,51 +491,57 @@ from losses.qr_loss import SQR_loss
 
 class Metrics():
     @torch.no_grad()
-    def __init__(self,params):
+    def __init__(self,params,normalizer):
         self.metrics = params["_Metrics"]
         self.params = params
         self.lambda_ = params["_BEYOND_LAMBDA"] 
         self.batchsize = params["_BATCHSIZE"]
-
+        self.normalizer = normalizer 
     @torch.no_grad()
     def __call__(self, pred, truth,input=None,quantile=None,model=None, options={}):
         results = {}
+        pred_denorm = self.normalizer.inverse_transform(pred)
+        truth_denorm = self.normalizer.inverse_transform(truth)
         if quantile is not None:
-            results['Pinball'] = pinball_loss(pred, truth, quantiles=quantile)
+
+            results['Pinball'] = pinball_loss(pred_denorm, truth_denorm, quantiles=quantile).item()
             beyond_loss = SQR_loss(type='pinball_loss',lambda_=self.lambda_)
-            results['Beyond'] = beyond_loss(pred, truth, quantile=quantile)
+            results['Beyond'] = beyond_loss(pred_denorm, truth_denorm, quantile=quantile).item()
         for metric in self.metrics:
             assert input is not None and model is not None, "If doing complex metrics, we need a full quantile output for which input and model is required"
-            cdf,q = self.approx_cdf(input,model) #TODO needs support for batches - input and quantiles will be incompatible right now
-            median = cdf[...,int(len(q)/2)].unsqueeze(-1)
+            cdf,cdf_denorm,q = self.approx_cdf(input,model) #TODO needs support for batches - input and quantiles will be incompatible right now
+            median = cdf_denorm[...,int(len(q)/2)].unsqueeze(-1)
 
             if metric == 'MAE':
-                results['MAE'] = MAE(median, truth)
+                mae = L1Loss()
+                results['MAE'] = mae(median,truth).item()#MAE(median, truth)
             elif metric == 'MSE':
-                results['MSE'] = MSE(median, truth)
+                results['MSE'] = MSE(median, truth).item()
             elif metric == 'RMSE':
-                results['RMSE'] = RMSE(median, truth)
+                rmse = MSELoss()
+                results['RMSE'] =  torch.sqrt(rmse(median,truth)).item() #RMSE(median, truth)
             elif metric == 'MAPE':
-                results['MAPE'] = MAPE(median, truth)
+                results['MAPE'] = MAPE(median, truth).item()
             elif metric == 'MSPE':
-                results['MSPE'] = MSPE(median, truth)
+                results['MSPE'] = MSPE(median, truth).item()
             elif metric == 'RSE':
-                results['RSE'] = RSE(median, truth)
+                results['RSE'] = RSE(median, truth).item()
             elif metric == 'CORR':
-                results['CORR'] = CORR(median, truth)
+                results['CORR'] = CORR(median, truth).item()
             elif metric == 'PINAW':
-                results['PINAW'] = PINAW(cdf, truth,quantiles=q)
+                results['PINAW'] = PINAW(cdf, truth,quantiles=q).item()
             elif metric == 'PICP':
-                results['PICP'] = PICP(cdf, truth,quantiles=q,return_counts=False)
+                value = PICP(cdf, truth,quantiles=q,return_counts=False)
+                results["PICP"] = np.array([v.item() for v in value.values()])
             elif metric == 'ACE':
                 picp = PICP(cdf, truth,quantiles=q)
-                results['ACE'] = ACE(picp)/self.batchsize    
+                results['ACE'] = (ACE(picp)/self.batchsize).item()    
             elif metric == 'CRPS':
-                results['CRPS'] = eval_crps(cdf, truth, options)
+                results['CRPS'] = eval_crps(cdf, truth, options).item()
             elif metric == 'Calibration':
                 results['Calibration'] = PICP_quantile(cdf, truth,quantiles=q)
             elif metric == 'nnl_loss':
-                results['nnl_loss'] = nnl_loss(options)(pred, truth, options)
+                results['nnl_loss'] = nnl_loss(options)(pred, truth, options).item()
             elif metric == 'skill_score':
                 assert input is not None, "Input (X) is required for skill score's persistence model"
                 assert 'horizon' in options, "Horizon is required for skill score"
@@ -567,7 +573,8 @@ class Metrics():
             pred = model(input,q_in,valid_run=True)
             cdf.append(pred)
         cdf = torch.stack(cdf,dim=-1).squeeze(-2)
-        return cdf,quantiles
+        cdf_denorm = self.normalizer.inverse_transform(cdf)
+        return cdf,cdf_denorm, quantiles
     
     
 
