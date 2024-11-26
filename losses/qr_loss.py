@@ -23,6 +23,7 @@ class SQR_loss():
         self.type = type
         self.lambda_ = lambda_ # lambda for calibration_sharpness_loss, determining weight of sharpness component
     def __call__(self,y_pred,y_true,quantile):
+        quantile = quantile[:,0:y_pred.shape[1],:] # cut off excess quantiles if necess
         if not (len(y_pred.shape) == len(y_true.shape) == len(quantile.shape)):
             warnings.warn('All inputs should have the same number of dimensions')
         if self.type == 'pinball_loss':

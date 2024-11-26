@@ -52,6 +52,7 @@ class CalibratedLatticeModel(nn.Module):
         num_lattice_first_layer: int = 1,
         output_size: int = 1,
         calibration_keypoints: int = 5,
+        device=None,
     ) -> None:
         super().__init__()
         _decrease_factor = 2 # hardcoded for now - decreases the number of lattices in each layer
@@ -80,6 +81,7 @@ class CalibratedLatticeModel(nn.Module):
                 input_dim_per_lattice = self.input_dim_per_lattice,
                 num_lattice= layer_size,
                 output_calibration_num_keypoints=calibration_keypoints,
+                device=device,
             )
             layer_size = int(layer_size/_decrease_factor)
             

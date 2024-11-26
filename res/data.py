@@ -89,8 +89,8 @@ class Data_Normalizer():
     Always uses min-max normalization.
     """
     def __init__(self,
-                 train: np.ndarray = None,
-                 train_target: np.ndarray = None,
+                 train: np.ndarray,
+                 train_target: np.ndarray,
                  valid: np.ndarray = None,
                  valid_target: np.ndarray = None,
                  test: np.ndarray = None,
@@ -113,26 +113,25 @@ class Data_Normalizer():
         self.test = test
         self.test_target = test_target
         
-        if train is not None:
-            self.min_train = np.min(train)
-            self.max_train = np.max(train)
-        if train_target is not None:
-            self.min_train_target = np.min(train_target)
-            self.max_train_target = np.max(train_target)
-        if valid is not None:
-            self.min_valid = np.min(valid)
-            self.max_valid = np.max(valid)
-        if valid_target is not None:
-            self.min_valid_target = np.min(valid_target)
-            self.max_valid_target = np.max(valid_target)
-        if test is not None:
-            self.min_test = np.min(test)
-            self.max_test = np.max(test)
-        if test_target is not None:
-            self.min_test_target = np.min(test_target)
-            self.max_test_target = np.max(test_target)
-            
+        self.min_train = np.min(train,axis=0)
+        self.max_train = np.max(train,axis=0)
 
+        self.min_train_target = np.min(train_target,axis=0)
+        self.max_train_target = np.max(train_target,axis=0)
+
+        self.min_valid = self.min_train
+        self.max_valid = self.max_train
+
+        self.min_valid_target = self.min_train_target
+        self.max_valid_target = self.max_train_target
+
+        self.min_test = self.min_train
+        self.max_test = self.max_train
+
+        self.min_test_target = self.min_train_target
+        self.max_test_target = self.max_train_target
+
+        
     ## Helper functions, not supposed to be called directly
     def apply_minmax(self,var:str):
         return (self.__dict__[var] - self.__dict__[f"min_{var}"])/(self.__dict__[f"max_{var}"] - self.__dict__[f"min_{var}"])
@@ -206,7 +205,7 @@ class Data_Normalizer():
         else:
             raise ValueError("Target must be either train, train_target, valid, valid_target, test or test_target")
 
-    def inverse_transform(self, data, target: str="train"):
+    def inverse_transform(self, data, target: str="train_target"):
         """
         Apply inverse min-max normalization to a specific dataset.
 

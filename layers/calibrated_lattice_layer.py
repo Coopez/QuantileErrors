@@ -76,6 +76,7 @@ class CalibratedLatticeLayer(ConstrainedModule):
         output_size: Optional[int] = None,
         input_dim_per_lattice: int = 1,
         num_lattice: int = 1,
+        device=None,
     ) -> None:
         """Initializes an instance of `CalibratedLattice`.
 
@@ -165,6 +166,8 @@ class CalibratedLatticeLayer(ConstrainedModule):
         self.lattice.apply_constraints()
         for output_calibrator in self.output_calibrator.values():
             output_calibrator.apply_constraints()
+        if self.output_size is not None:
+            self.layer_output.apply_constraints()
 
 
     @torch.no_grad()
@@ -200,6 +203,10 @@ class CalibratedLatticeLayer(ConstrainedModule):
             output_calibrator_messages = output_calibrator.assert_constraints(eps)
             if output_calibrator_messages:
                 messages[f"{name}_output_calibrator"] = output_calibrator_messages
+        if self.output_size is not None:
+            layer_output_messages = self.layer_output.assert_constraints(eps)
+            if layer_output_messages:
+                messages["layer_output"] = layer_output_messages
         return messages
     
 

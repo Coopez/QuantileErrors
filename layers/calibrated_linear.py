@@ -70,10 +70,10 @@ class Linear(ConstrainedModule):
         Raises:
             ValueError: If monotonicities does not have length input_dim (if provided).
         """
-        super().__init__()
+        super(Linear,self).__init__()
         self.output_dim = output_dim
         self.input_dim = input_dim
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
         if monotonicities and len(monotonicities) != input_dim:
             raise ValueError("Monotonicities, if provided, must have length input_dim.")
         self.monotonicities = (
@@ -84,11 +84,11 @@ class Linear(ConstrainedModule):
         self.use_bias = use_bias if not weighted_average else False
         self.weighted_average = weighted_average
 
-        self.kernel = torch.nn.Parameter(torch.Tensor(input_dim, output_dim).double()).to(device)
+        self.kernel = torch.nn.Parameter(torch.Tensor(input_dim, output_dim).double(),requires_grad=True)
         torch.nn.init.constant_(self.kernel, 1.0 / input_dim)
         if use_bias:
-            self.bias = torch.nn.Parameter(torch.Tensor(1).double()).to(device)
-            torch.nn.init.constant_(self.bias, 0.0)
+            self.bias = torch.nn.Parameter(torch.Tensor([0.0]).double())
+            #torch.nn.init.constant_(self.bias, 0.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Transforms inputs using a linear combination.
@@ -99,7 +99,7 @@ class Linear(ConstrainedModule):
         Returns:
             torch.Tensor of shape `(batch_size, 1)` containing transformed input values.
         """
-        result = torch.mm(x, self.kernel)
+        result = torch.matmul(x, self.kernel)
         if self.use_bias:
             result += self.bias
         return result

@@ -496,6 +496,7 @@ class Metrics():
         self.params = params
         self.lambda_ = params["_BEYOND_LAMBDA"] 
         self.batchsize = params["_BATCHSIZE"]
+        self.horizon = params["_PRED_LENGTH"]
         self.normalizer = normalizer 
     @torch.no_grad()
     def __call__(self, pred, truth,input=None,quantile=None,model=None, options={}):
@@ -503,8 +504,8 @@ class Metrics():
         pred_denorm = self.normalizer.inverse_transform(pred)
         truth_denorm = self.normalizer.inverse_transform(truth)
         if quantile is not None:
-
-            results['Pinball'] = pinball_loss(pred_denorm, truth_denorm, quantiles=quantile).item()
+            pinball = SQR_loss(type='pinball_loss',lambda_=self.lambda_)
+            results['Pinball'] = pinball(pred_denorm, truth_denorm, quantile=quantile).item()
             beyond_loss = SQR_loss(type='pinball_loss',lambda_=self.lambda_)
             results['Beyond'] = beyond_loss(pred_denorm, truth_denorm, quantile=quantile).item()
         for metric in self.metrics:
@@ -514,20 +515,20 @@ class Metrics():
 
             if metric == 'MAE':
                 mae = L1Loss()
-                results['MAE'] = mae(median,truth).item()#MAE(median, truth)
+                results['MAE'] = mae(median,truth_denorm).item()#MAE(median, truth)
             elif metric == 'MSE':
-                results['MSE'] = MSE(median, truth).item()
+                results['MSE'] = MSE(median, truth_denorm).item()
             elif metric == 'RMSE':
                 rmse = MSELoss()
-                results['RMSE'] =  torch.sqrt(rmse(median,truth)).item() #RMSE(median, truth)
+                results['RMSE'] =  torch.sqrt(rmse(median,truth_denorm)).item() #RMSE(median, truth)
             elif metric == 'MAPE':
-                results['MAPE'] = MAPE(median, truth).item()
+                results['MAPE'] = MAPE(median, truth_denorm).item()
             elif metric == 'MSPE':
-                results['MSPE'] = MSPE(median, truth).item()
+                results['MSPE'] = MSPE(median, truth_denorm).item()
             elif metric == 'RSE':
-                results['RSE'] = RSE(median, truth).item()
+                results['RSE'] = RSE(median, truth_denorm).item()
             elif metric == 'CORR':
-                results['CORR'] = CORR(median, truth).item()
+                results['CORR'] = CORR(median, truth_denorm).item()
             elif metric == 'PINAW':
                 results['PINAW'] = PINAW(cdf, truth,quantiles=q).item()
             elif metric == 'PICP':
@@ -535,7 +536,7 @@ class Metrics():
                 results["PICP"] = np.array([v.item() for v in value.values()])
             elif metric == 'ACE':
                 picp = PICP(cdf, truth,quantiles=q)
-                results['ACE'] = (ACE(picp)/self.batchsize).item()    
+                results['ACE'] = (ACE(picp)/(self.batchsize*self.horizon)).item()    
             elif metric == 'CRPS':
                 results['CRPS'] = eval_crps(cdf, truth, options).item()
             elif metric == 'Calibration':
@@ -546,7 +547,7 @@ class Metrics():
                 assert input is not None, "Input (X) is required for skill score's persistence model"
                 assert 'horizon' in options, "Horizon is required for skill score"
                 assert 'lookback' in options, "Lookback is required for skill score"
-                results['skill_score'] = Skill_score(options["horizon"],options["lookback"])(median, truth,input)
+                results['skill_score'] = Skill_score(options["horizon"],options["lookback"])(median, truth_denorm,input)
             else:
                 raise ValueError(f"Unknown metric: {metric}")
         return results

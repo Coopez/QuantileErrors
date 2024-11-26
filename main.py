@@ -42,7 +42,7 @@ if _LOG_NEPTUNE:
     run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
     
 train,train_target,valid,valid_target,_,_ = data_import()
-train = train[:,11]
+#train = train[:,11] # disable if training on all features/stations
 valid = valid[:,11]
 
 # normalize train and valid
@@ -88,9 +88,10 @@ lattice_paras = {
     'num_lattice_first_layer':_NUM_LATTICE_FIRST_LAYER,
     'output_size':params['_PRED_LENGTH'],
     'calibration_keypoints':params['_NUM_KEYPOINTS'],
+    'device':device
     }
 model = LSTM_Lattice(lstm_paras, lattice_paras,
-                     params=params)
+                     params=params).to(device)
 
 # Forward pass
 # Define loss function and optimizer
@@ -141,43 +142,46 @@ for epoch in range(epochs):
             if _LOG_NEPTUNE:
                 run['train/'+params['loss_option'][params['_LOSS']]].log(np.mean(train_losses))
     model.eval()
-    with torch.no_grad():
-        #valid_losses = []
-        metric_dict = {}
-        for batch in data_loader_valid:
+    metric_dict = {}
+    if epoch % params['_METRICS_EVERY_X'] == 0:
+        # Validation
+        with torch.no_grad():
+            #valid_losses = []
             
-            training_data, target = batch
-            quantile = data_valid.return_quantile(training_data.shape[0])
-            # Forward pass
-            output = model(training_data,quantile)
-            
-            # Compute loss
-              #criterion(output, target, quantile.unsqueeze(-1),
-                    #         type=params['loss_option'][params['_LOSS']])
-            #deb = Debug_model(model,training_data,quantile)
-            #deb.plot_out()
-            loss = metric(output, target.type(torch.double),input=training_data ,model=model,quantile=quantile.unsqueeze(-1),options = extra_options)
-            for key, value in loss.items():
-                # value is a tensor, we need to extract the value, but they may be a dict
-                # if isinstance(value, dict):
-                #     value = [v.item() for v in value.values()]
-                # else:
-                #     value = value.item()
+            for batch in data_loader_valid:
                 
-                if key in metric_dict:
-                    metric_dict[key].append(value)
+                training_data, target = batch
+                quantile = data_valid.return_quantile(training_data.shape[0])
+                # Forward pass
+                output = model(training_data,quantile)
+                
+                # Compute loss
+                #criterion(output, target, quantile.unsqueeze(-1),
+                        #         type=params['loss_option'][params['_LOSS']])
+                #deb = Debug_model(model,training_data,target)
+                #deb.plot_out()
+                loss = metric(output, target.type(torch.double),input=training_data ,model=model,quantile=quantile.unsqueeze(-1),options = extra_options)
+                for key, value in loss.items():
+                    # value is a tensor, we need to extract the value, but they may be a dict
+                    # if isinstance(value, dict):
+                    #     value = [v.item() for v in value.values()]
+                    # else:
+                    #     value = value.item()
+                    
+                    if key in metric_dict:
+                        metric_dict[key].append(value)
+                    else:
+                        metric_dict[key] = [value]
+                    #valid_losses.append(loss.item())
+        if _LOG_NEPTUNE:
+            #log all metrics in metric_dict to neptune
+            for key, value in metric_dict.items():
+                # test if value is a list 
+                if isinstance(value[0], np.ndarray): # need to check if in the list of batch accumulated values we have an array
+                        value = np.stack(value,axis=-1).mean(axis=-1).tolist()
+                        run['valid/'+key].log(stringify_unsupported(value))
                 else:
-                    metric_dict[key] = [value]
-                #valid_losses.append(loss.item())
-    if _LOG_NEPTUNE:
-        #log all metrics in metric_dict to neptune
-        for key, value in metric_dict.items():
-            # test if value is a list 
-            if isinstance(value[0], np.ndarray): # need to check if in the list of batch accumulated values we have an array
-                    value = np.stack(value,axis=-1).mean(axis=-1).tolist()
-                    run['valid/'+key].log(stringify_unsupported(value))
-            else:
-                run['valid/'+key].log(np.mean(value))
+                    run['valid/'+key].log(np.mean(value))
 
     
     epoch_time = time.time() - start_time
