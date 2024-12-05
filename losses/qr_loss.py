@@ -19,9 +19,10 @@ def sqr_loss(y_pred,y_true,quantile,type='pinball_loss'):
     return None
 
 class SQR_loss():
-    def __init__(self,type='pinball_loss',lambda_=0.5):
+    def __init__(self,type='pinball_loss',lambda_=0.5,scale_sharpness=False):
         self.type = type
         self.lambda_ = lambda_ # lambda for calibration_sharpness_loss, determining weight of sharpness component
+        self.scale_sharpness = scale_sharpness # scale sharpness component by quantile
     def __call__(self,y_pred,y_true,quantile):
         quantile = quantile[:,0:y_pred.shape[1],:] # cut off excess quantiles if necess
         if not (len(y_pred.shape) == len(y_true.shape) == len(quantile.shape)):
@@ -32,7 +33,9 @@ class SQR_loss():
             # Expects y_pred to be of size (batch_size,window_size,2) for quantile and 1-quantile
             assert y_pred.shape[2] == 2, 'y_pred should have quantile and 1-quantile'
             calibration = calibration_loss(y_pred[...,0].unsqueeze(-1),y_true,quantile)
-            sharpness = sharpness_loss(y_pred,quantile)
+            if self.lambda_ == 0:
+                return calibration
+            sharpness = sharpness_loss(y_pred,quantile,scale_sharpness_scale=self.scale_sharpness)
             loss = (1-self.lambda_)*calibration + self.lambda_*sharpness
             # with torch.no_grad():
             #     qloss = torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
@@ -76,18 +79,25 @@ def predicted_probability(y_pred,y_true):
     return torch.mean((y<=0).type(torch.float32),dim=0) #TODO check if dim is correct
 
 
-def sharpness_loss(y_pred,quantile):
+def sharpness_loss(y_pred,quantile,scale_sharpness_scale=False):
     """
     sharpness component checks how far apart sister quantiles are and penalizes in turn
     """
+    if scale_sharpness_scale:
+        scale_sharpness = quantile_sharpness_scale(quantile)
+    else:
+        scale_sharpness = torch.ones_like(quantile)
     p = (quantile <= 0.5).type(torch.float32)
     # needs abs because of quantile crossover probability
     # not in original paper. !TODO: check if this is in code of  Beyond quantile loss paper
     # !TODO: if not can make reference to this in own paper
-    return torch.mean((p*(y_pred[...,1]-y_pred[...,0]) + (1-p)*(y_pred[...,0]-y_pred[...,1]))**2) 
+    return torch.mean(scale_sharpness*torch.abs(p*(y_pred[...,1]-y_pred[...,0]) + (1-p)*(y_pred[...,0]-y_pred[...,1]))) # replaced **2 with abs
 # Sharpness seems to only look at positive difference in quantiles. The formula could be simplified to an absolute difference anyways if we are to assume that there wont be quantile crossovers.
 #  If there are, this loss form is not helpful either, as that would be awarded 0 loss. 
 
 
 #!TODO: Why not use normal MSE or MAE as sharpness component? We only care how far apart quantiles are from the truth. We could even use something more sophisticated for the sharpness component.
 # Question: Does passing the qunatiles as input vector feature make sense? If so, should 1-p also be passed as input?
+
+def quantile_sharpness_scale(q):
+    return torch.where(q <= 0.5, 2 * q, 2 * (1 - q))

@@ -42,7 +42,8 @@ if _LOG_NEPTUNE:
     run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
     
 train,train_target,valid,valid_target,_,_ = data_import()
-#train = train[:,11] # disable if training on all features/stations
+if params['_INPUT_SIZE_LSTM'] == 1:
+    train = train[:,11] # disable if training on all features/stations
 valid = valid[:,11]
 
 # normalize train and valid
@@ -98,7 +99,7 @@ model = LSTM_Lattice(lstm_paras, lattice_paras,
 if _LOG_NEPTUNE:
     run['model_summary'] = str(model)
 
-criterion = SQR_loss(type=params['loss_option'][params['_LOSS']], lambda_=params['_BEYOND_LAMBDA'])
+criterion = SQR_loss(type=params['loss_option'][params['_LOSS']], lambda_=params['_BEYOND_LAMBDA'], scale_sharpness=params['_SCALE_SHARPNESS'])
 metric = Metrics(params,Normalizer)
 
 if params['_DETERMINISTIC_OPTIMIZATION']:
@@ -215,8 +216,7 @@ WAIT - Test
 50%  - Erling sky cam model&data integration
 WAIT - More Loss functions
 60%  - Probabilistic Metrics
-
-00 % - Metrics which list??
+00% - Adapt to ML nodes
 
 
 Need to log/check quantile epoch distribution?
