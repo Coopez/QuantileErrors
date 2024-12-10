@@ -580,19 +580,10 @@ class Metrics():
     
     
 
-
-
 def persistence(x):
     return x[...,-1,0]
 
     
-
-
-
-
-
-
-
 
 
 class Skill_score():

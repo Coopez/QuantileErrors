@@ -15,7 +15,7 @@ from res.data import data_import, Data_Normalizer, Batch_Normalizer
 from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
 
-from losses.qr_loss import SQR_loss
+from losses.qr_loss import SQR_loss, sharpness_loss
 from models.LSTM_Lattice import LSTM_Lattice
 
 from utils.helper_func import generate_surrogate_quantiles, return_features, return_Dataframe
@@ -118,6 +118,7 @@ if params['_DETERMINISTIC_OPTIMIZATION']:
 for epoch in range(epochs):
     start_time = time.time()
     train_losses = []
+    sharp_losses = []
     model.train()
     for training_data, target in dataloader:
         quantile = data.return_quantile(training_data.shape[0])
@@ -140,14 +141,21 @@ for epoch in range(epochs):
             #     output = Batchnorm_train.inverse_transform(output,pos=11)
             # Compute loss
             loss = criterion(output, target, quantile.unsqueeze(-1))
-            
+
             #Backward pass and optimization
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             train_losses.append(loss.item())
+
+            if params['loss_option'][params['_LOSS']] == 'calibration_sharpness_loss':
+                with torch.no_grad():
+                    sharpness = sharpness_loss(output,quantile.unsqueeze(-1),scale_sharpness_scale=params['_SCALE_SHARPNESS'])
+                    sharp_losses.append(sharpness.item())
             if _LOG_NEPTUNE:
                 run['train/'+params['loss_option'][params['_LOSS']]].log(np.mean(train_losses))
+                if params['loss_option'][params['_LOSS']] == 'calibration_sharpness_loss':
+                    run['train/sharpness'].log(np.mean(sharp_losses))
     model.eval()
     metric_dict = {}
     if epoch % params['_METRICS_EVERY_X'] == 0:
@@ -173,6 +181,7 @@ for epoch in range(epochs):
                 #deb = Debug_model(model,training_data,target)
                 #deb.plot_out()
                 loss = metric(output, target.type(torch.double),input=training_data ,model=model,quantile=quantile.unsqueeze(-1),options = extra_options)
+                
                 for key, value in loss.items():
                     # value is a tensor, we need to extract the value, but they may be a dict
                     # if isinstance(value, dict):
@@ -198,6 +207,8 @@ for epoch in range(epochs):
     
     epoch_time = time.time() - start_time
     step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time , "Train_Loss": np.mean(train_losses)}
+    if params['loss_option'][params['_LOSS']] == 'calibration_sharpness_loss':
+        step_meta["Sharpness"] = np.mean(sharp_losses)
     if _VERBOSE:
         metric.print_metrics({**step_meta, **metric_dict})
 

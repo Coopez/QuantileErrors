@@ -85,6 +85,7 @@ def sharpness_loss(y_pred,quantile,scale_sharpness_scale=False):
     """
     sharpness component checks how far apart sister quantiles are and penalizes in turn
     """
+    quantile = quantile[:,0:y_pred.shape[1],:] # cut off excess quantiles if necessary
     if scale_sharpness_scale:
         scale_sharpness = quantile_sharpness_scale(quantile)
     else:
