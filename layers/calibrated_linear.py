@@ -87,7 +87,7 @@ class Linear(ConstrainedModule):
         self.kernel = torch.nn.Parameter(torch.Tensor(input_dim, output_dim).double(),requires_grad=True)
         torch.nn.init.constant_(self.kernel, 1.0 / input_dim)
         if use_bias:
-            self.bias = torch.nn.Parameter(torch.Tensor([0.0]).double())
+            self.bias = torch.nn.Parameter(torch.zeros(output_dim).double(),requires_grad=True)
             #torch.nn.init.constant_(self.bias, 0.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
