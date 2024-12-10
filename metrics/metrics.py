@@ -8,6 +8,7 @@ import torch
 import torch.distributions as distribution
 
 from torch.nn import MSELoss, L1Loss
+from res.data import Batch_Normalizer
 
 def RSE(pred, true): # why is this scaled by the difference in true to true mean - Some kind of Normalization
     return np.sqrt(np.sum((true - pred) ** 2)) / np.sqrt(np.sum((true - true.mean()) ** 2))
@@ -329,21 +330,6 @@ def sharpness(pred, intervals=[0.2, 0.5, 0.9], quantiles=None, return_counts=Tru
             # ascending order and correspond to the intervals
             ci_l = pred[:, i][:, None]
             ci_u = pred[:, -(i+1)][:, None]
-
-        elif pred.shape[-1] == 2 and len(pred.shape) == 2: 
-            # Assumes normal distribution... 
-                z_val = torch.erfinv(torch.tensor(interval_i)) * np.sqrt(2)
-                ci_l = pred[:, :1] - pred[:, -1:] * z_val
-                ci_u = pred[:, :1] + pred[:, -1:] * z_val
-
-        else: 
-            # Assumes normal distribution... 
-            for interval_i in interval_i:
-                z_val = torch.erfinv(torch.tensor(interval_i)) * np.sqrt(2)
-                mean_i = pred.mean(0)
-                std_i = pred.std(0)
-                ci_l = mean_i - std_i * z_val       #/ (pred.shape[0] ** 0.5)
-                ci_u = mean_i + std_i * z_val
         
         # We just take the absolute values to not give better scores for QR which might wrongly place quantiles. 
         # This is still not ideal and we could instead just not consider such non-senible scenarious... 
@@ -486,6 +472,10 @@ def pinball_loss(pred, truth, quantiles):
     
     return torch.mean(torch.max((truth - pred) * quantiles, (pred - truth) * (1 - quantiles)))
 
+def diff_expected_observed_coverage(pinaw,intervals):
+    
+    return np.mean(intervals-pinaw)
+
 
 from losses.qr_loss import SQR_loss
 
@@ -497,6 +487,7 @@ class Metrics():
         self.lambda_ = params["_BEYOND_LAMBDA"] 
         self.batchsize = params["_BATCHSIZE"]
         self.horizon = params["_PRED_LENGTH"]
+        self.input_size = params["_INPUT_SIZE_LSTM"]   
         self.normalizer = normalizer 
     @torch.no_grad()
     def __call__(self, pred, truth,input=None,quantile=None,model=None, options={}):
@@ -506,7 +497,7 @@ class Metrics():
         if quantile is not None:
             pinball = SQR_loss(type='pinball_loss',lambda_=self.lambda_)
             results['Pinball'] = pinball(pred_denorm, truth_denorm, quantile=quantile).item()
-            beyond_loss = SQR_loss(type='pinball_loss',lambda_=self.lambda_)
+            beyond_loss = SQR_loss(type='calibration_sharpness_loss',lambda_=self.lambda_)
             results['Beyond'] = beyond_loss(pred_denorm, truth_denorm, quantile=quantile).item()
         for metric in self.metrics:
             assert input is not None and model is not None, "If doing complex metrics, we need a full quantile output for which input and model is required"
@@ -530,7 +521,11 @@ class Metrics():
             elif metric == 'CORR':
                 results['CORR'] = CORR(median, truth_denorm).item()
             elif metric == 'PINAW':
-                results['PINAW'] = PINAW(cdf, truth,quantiles=q).item()
+                
+                value = PINAW(cdf, truth,quantiles=q,return_counts=False)
+                intervals = list(value.keys())
+                results['PINAW'] = np.array([v.item() for v in value.values()])
+                results['Coverage'] = diff_expected_observed_coverage(results['PINAW'],intervals)
             elif metric == 'PICP':
                 value = PICP(cdf, truth,quantiles=q,return_counts=False)
                 results["PICP"] = np.array([v.item() for v in value.values()])
@@ -561,7 +556,7 @@ class Metrics():
                 print(f"{value_str:.1f}s".ljust(8)+"-|", end=' ')
             elif metric == "Epoch":
                 print("Epoch:" + value_str, end=' ')
-            elif metric == "PICP":
+            elif metric == "PICP" or metric == "PINAW":
                 pass # we don't want to print this
             else:
                 print((f"{metric}: {value_str:.4f}").ljust(15), end=' ')
@@ -569,9 +564,15 @@ class Metrics():
     def approx_cdf(self,input,model):
         quantiles = [0.05,0.125,0.25,0.375,0.45,0.5,0.55,0.625,0.75,0.875,0.95]
         cdf = []
+        Batch_norm = Batch_Normalizer(input)
         for q in quantiles:
             q_in = torch.tensor(q).repeat(input.shape[0],1).to(input.device)
+            # input = Batch_norm.transform(input)
             pred = model(input,q_in,valid_run=True)
+            # if self.input_size == 1:
+            #     pred = Batch_norm.inverse_transform(pred)
+            # else:
+            #     pred = Batch_norm.inverse_transform(pred,pos=11)
             cdf.append(pred)
         cdf = torch.stack(cdf,dim=-1).squeeze(-2)
         cdf_denorm = self.normalizer.inverse_transform(cdf)
