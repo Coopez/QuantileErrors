@@ -224,3 +224,43 @@ class Data_Normalizer():
 
         
     
+# class Batch_Normalizer():
+#     """
+#     Normalizing everything in a batch of data
+#     """
+#     def __init__(self,data: torch.Tensor):
+#         self.min = torch.min(data,dim=1).values.unsqueeze(1)
+#         self.max = torch.max(data,dim=1).values.unsqueeze(1)
+
+
+
+#     def transform(self,data: torch.Tensor):
+#         tmin = self.min.repeat_interleave(data.shape[1], dim=1)
+#         tmax = self.max.repeat_interleave(data.shape[1], dim=1)
+#         return (data - tmin)/(tmax - tmin)
+#     def inverse_transform(self,data: torch.Tensor, pos: int = 0):
+#         tmin = self.min.repeat_interleave(data.shape[1], dim=1)
+#         tmax = self.max.repeat_interleave(data.shape[1], dim=1)
+#         return (data*(tmax[...,pos].unsqueeze(-1) - tmin[...,pos].unsqueeze(-1))) + tmin[...,pos].unsqueeze(-1)
+    
+
+## need batch norm with mean and std
+
+class Batch_Normalizer():
+    """
+    Normalizing everything in a batch of data
+    """
+    def __init__(self,data: torch.Tensor):
+        self.mean = torch.mean(data,dim=1).unsqueeze(1)
+        self.std = torch.std(data,dim=1).unsqueeze(1)
+
+
+
+    def transform(self,data: torch.Tensor):
+        tmean = self.mean.repeat_interleave(data.shape[1], dim=1)
+        tstd = self.std.repeat_interleave(data.shape[1], dim=1)
+        return (data)/tstd
+    def inverse_transform(self,data: torch.Tensor, pos: int = 0):
+        tmean = self.mean.repeat_interleave(data.shape[1], dim=1)
+        tstd = self.std.repeat_interleave(data.shape[1], dim=1)
+        return (data*tstd[...,pos].unsqueeze(-1)) 

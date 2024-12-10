@@ -10,7 +10,7 @@ import time
 from debug.plot import Debug_model
 ##############################
 from metrics.metrics import Metrics
-from res.data import data_import, Data_Normalizer
+from res.data import data_import, Data_Normalizer, Batch_Normalizer
 
 from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
@@ -19,7 +19,7 @@ from losses.qr_loss import SQR_loss
 from models.LSTM_Lattice import LSTM_Lattice
 
 from utils.helper_func import generate_surrogate_quantiles, return_features, return_Dataframe
-from config import _LOG_NEPTUNE, _VERBOSE
+from config import _LOG_NEPTUNE, _VERBOSE, params
 
 if _LOG_NEPTUNE:
     import neptune
@@ -28,11 +28,11 @@ if _LOG_NEPTUNE:
     from api_key import _NEPTUNE_API_TOKEN
     run = neptune.init_run(
         project="n1kl4s/QuantileError",
+        name = params['_model_options'][params['_MODEL']] +"-"+ str(params["_HIDDEN_SIZE_LSTM"]) +"-"+ str(params["_NUM_LAYERS_LSTM"])+"-"+ str(params["_NUM_LAYERS_LATTICE"])+"-"+ str(params["_NUM_KEYPOINTS"])+"-"+params["loss_option"][params['_LOSS']],
         api_token=_NEPTUNE_API_TOKEN,
     )
     run['data/type'] = _DATA_DESCRIPTION
 
-from config import params
 
 # pytorch random seed
 torch.manual_seed(params['_RANDOM_SEED'])
@@ -62,10 +62,10 @@ quantiles_valid = generate_surrogate_quantiles(len(valid),params)
 Xv = return_Dataframe(quantiles_valid,valid)
 features = return_features(quantiles,params,data=train)
 data = CalibratedDataset(X, y, features, window_size=params['_WINDOW_SIZE'], horizon_size=params['_PRED_LENGTH'], device=device) 
-dataloader = torch.utils.data.DataLoader(data, batch_size=params['_BATCHSIZE'], shuffle=True, generator=torch.Generator(device=device))
+dataloader = torch.utils.data.DataLoader(data, batch_size=params['_BATCHSIZE'], shuffle=params['_SHUFFLE_train'], generator=torch.Generator(device=device))
 
 data_valid = CalibratedDataset(Xv, valid_target, features, window_size=params['_WINDOW_SIZE'], horizon_size=params['_PRED_LENGTH'], device=device)
-data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=params['_BATCHSIZE'], shuffle=True, generator=torch.Generator(device=device))
+data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=params['_BATCHSIZE'], shuffle=params['_SHUFFLE_valid'], generator=torch.Generator(device=device))
 
 features_lattice = return_features(quantiles,params,data=None,LSTM_out=params['_HIDDEN_SIZE_LSTM'])
 
@@ -121,6 +121,7 @@ for epoch in range(epochs):
     model.train()
     for training_data, target in dataloader:
         quantile = data.return_quantile(training_data.shape[0])
+        Batchnorm_train = Batch_Normalizer(training_data)
         if params['_DETERMINISTIC_OPTIMIZATION']:
             def closure():
                 optimizer.zero_grad()
@@ -130,8 +131,13 @@ for epoch in range(epochs):
                 return loss
             optimizer.step(closure)
         else:
-            # Normal forward pass
+            # Normal forward pass with batchnorm
+            # training_data = Batchnorm_train.transform(training_data)
             output = model(training_data,quantile)
+            # if params["_INPUT_SIZE_LSTM"] == 1:
+            #     output = Batchnorm_train.inverse_transform(output)
+            # else:
+            #     output = Batchnorm_train.inverse_transform(output,pos=11)
             # Compute loss
             loss = criterion(output, target, quantile.unsqueeze(-1))
             
@@ -153,9 +159,14 @@ for epoch in range(epochs):
                 
                 training_data, target = batch
                 quantile = data_valid.return_quantile(training_data.shape[0])
+                # Batchnorm_valid = Batch_Normalizer(training_data)
                 # Forward pass
+                # training_data = Batchnorm_valid.transform(training_data)
                 output = model(training_data,quantile)
-                
+                # if params["_INPUT_SIZE_LSTM"] == 1:
+                #     output = Batchnorm_valid.inverse_transform(output)
+                # else:
+                #     output = Batchnorm_valid.inverse_transform(output,pos=11)
                 # Compute loss
                 #criterion(output, target, quantile.unsqueeze(-1),
                         #         type=params['loss_option'][params['_LOSS']])
