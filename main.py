@@ -11,7 +11,7 @@ from debug.plot import Debug_model
 ##############################
 from metrics.metrics import Metrics
 from res.data import data_import, Data_Normalizer, Batch_Normalizer
-
+from res.ife_data import import_ife_data 
 from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
 
@@ -19,12 +19,11 @@ from losses.qr_loss import SQR_loss, sharpness_loss
 from models.LSTM_Lattice import LSTM_Lattice
 
 from utils.helper_func import generate_surrogate_quantiles, return_features, return_Dataframe
-from config import _LOG_NEPTUNE, _VERBOSE, params
+from config import _LOG_NEPTUNE, _VERBOSE, params, _DATA_DESCRIPTION
 
 if _LOG_NEPTUNE:
     import neptune
     from neptune.utils import stringify_unsupported
-    from config import _DATA_DESCRIPTION
     from api_key import _NEPTUNE_API_TOKEN
     run = neptune.init_run(
         project="n1kl4s/QuantileError",
@@ -40,11 +39,17 @@ torch.manual_seed(params['_RANDOM_SEED'])
 _NUM_LATTICE_FIRST_LAYER = params['_HIDDEN_SIZE_LSTM'] + 1
 if _LOG_NEPTUNE:
     run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
-    
-train,train_target,valid,valid_target,_,_ = data_import()
-if params['_INPUT_SIZE_LSTM'] == 1:
-    train = train[:,11] # disable if training on all features/stations
-valid = valid[:,11]
+
+if _DATA_DESCRIPTION ==  "Station 11 Irradiance Sunpoint":
+    train,train_target,valid,valid_target,_,_ = data_import()
+    if params['_INPUT_SIZE_LSTM'] == 1:
+        train = train[:,11] # disable if training on all features/stations
+    valid = valid[:,11]
+elif _DATA_DESCRIPTION == "IFE Skycam":
+    train,train_target,valid,valid_target= import_ife_data(params) # has 11 features
+    train,train_target,valid,valid_target= train.values,train_target.values,valid.values,valid_target.values
+else:
+    raise ValueError("Data description not implemented")
 
 # normalize train and valid
 Normalizer = Data_Normalizer(train,train_target,valid,valid_target)

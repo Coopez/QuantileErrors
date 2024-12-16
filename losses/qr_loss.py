@@ -34,11 +34,16 @@ class SQR_loss():
             if y_pred.shape[2] != 2: #not motivated to fix this for now
                 return torch.zeros(1)
             calibration = calibration_loss(y_pred[...,0].unsqueeze(-1),y_true,quantile)
-            if self.lambda_ == 0: 
-                return calibration
+            neg_calibration = calibration_loss(y_pred[...,1].unsqueeze(-1),y_true,1-quantile) # we already predict the negative quantile anyways (for sharpness), why not use it?
+            calibration = torch.mean(torch.stack([calibration,neg_calibration]))
             sharpness = sharpness_loss(y_pred,quantile,scale_sharpness_scale=self.scale_sharpness)
+
+            hetero1 = heteroscedasticity_loss(y_pred[...,0].unsqueeze(-1),y_true,quantile)
+            hetero2 = heteroscedasticity_loss(y_pred[...,1].unsqueeze(-1),y_true,1-quantile) # same as we did for calibration
+            hetero = torch.mean(torch.stack([hetero1,hetero2]))
+
             #loss = (1-self.lambda_)*calibration + self.lambda_*sharpness
-            loss = calibration + self.lambda_*sharpness # changed to this because calibration does not need to be scaled down here. sharpness is just a penalty.
+            loss = calibration + self.lambda_*sharpness + hetero # changed to this because calibration does not need to be scaled down here. sharpness is just a penalty.
             # with torch.no_grad():
             #     qloss = torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
             #     print(f"calibration: {calibration}, qloss: {qloss}, diff: {calibration-qloss}")
@@ -56,17 +61,25 @@ def calibration_loss(y_pred,y_true,quantile):
         ) #TODO check if dim is correct
     return loss
 
+def heteroscedasticity_loss(y_pred,y_true,quantile):
+    pp = predicted_probability(y_pred,y_true)
+    penalty = torch.var(y_true,dim=1).unsqueeze(-1)
+    loss = torch.mean(
+        identifier(quantile[:,0,:],pp) * torch.mean( penalty* identifier_matrix(y_pred,y_true),dim=1) + 
+        identifier(pp,quantile[:,0,:]) * torch.mean( penalty * identifier_matrix(y_true,y_pred),dim=1) 
+        ) 
+    return loss
 
 def identifier(x,y):
     """
-    implements I(x<y)
+    implements I(x>y)
     output is likely a vector of batchsize
     """
     return (x>y).type(torch.float32)
 
 def identifier_matrix(x,y):
     """
-    returns a matrix of identifiers x<y
+    returns a matrix of identifiers x>y
     """
     assert torch.is_tensor(x) and torch.is_tensor(y), 'Both inputs should be tensors'
     return (x>y).type(torch.float32)
