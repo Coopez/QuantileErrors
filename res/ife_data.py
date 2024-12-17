@@ -18,14 +18,14 @@ def preprocess_ife_data(params:dict):
     result['CSI'] = result['GHI_clear'] / result['GHI']
  
     
-    pd.to_pickle(data,'IFE_dataset_model/trainval_df_preprocessed.pkl')
+    pd.to_pickle(result,'IFE_dataset_model/trainval_df_preprocessed.pkl')
     print('Data preprocessed and saved to IFE_dataset_model/trainval_df_preprocessed.pkl')
     return 
 
 
 def import_ife_data(params:dict):
     # Load data
-    trainval_df = pd.read_pickle('IFE_dataset_model/trainval_df.pkl')
+    trainval_df = pd.read_pickle('IFE_dataset_model/trainval_df_preprocessed.pkl')
     trainval_df = trainval_df.iloc[:,[7, 0, 1, 2, 3, 4, 5, 6, 10, 11, 12]] # features to use
     index_trainval = pd.read_pickle('IFE_dataset_model/trainval_C_index.pkl')
     # Split data
