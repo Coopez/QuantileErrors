@@ -17,7 +17,7 @@ n_features =  len(cols)
 
 split = [1,0.00001, 0.00001]
 n_neurons=[25,25]
-n_layers=2
+n_layers= 2
 dropout = 0.0
 
 
