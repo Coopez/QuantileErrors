@@ -1,45 +1,87 @@
 # Config for main.py
 
 _DATA_DESCRIPTION = "IFE Skycam"#"Station 11 Irradiance Sunpoint" # Description of the data set
-_LOG_NEPTUNE = True # determines if neptune is used
+_LOG_NEPTUNE = False # determines if neptune is used
 _VERBOSE = True # determines if printouts to console are made - should be False for ML cluster tasks
 
 
 # Hyperparameters
-
 params = dict(
-_BATCHSIZE = 256, # Batchsize
-_RANDOM_SEED = 0, # Random seed
-_SHUFFLE_train = False, # Determines if data is shuffled
-_SHUFFLE_valid = False, # Determines if data is shuffled
-_LEARNING_RATE = 0.001, #0.1, # Learning rate
-_EPOCHS = 300, # Number of epochs
-_DETERMINISTIC_OPTIMIZATION= False, # Determines if optimization is deterministic
+
+batch_size = 64, # Batchsize
+random_seed = 0, # Random seed
+train_shuffle = True, # Determines if data is shuffled
+valid_shuffle = True, # Determines if data is shuffled
+target = 'GHI', # or 'GHI' or 'ERLING_SETTINGS'
+learning_rate = 0.0001, #0.1, # Learning rate
+epochs = 300, # Number of epochs
+deterministic_optimization= False, # Determines if optimization is deterministic
+window_size = 3,#30,#24, # Lookback size
+horizon_size = 6,#90,#12, # Horizon size
+
+
 # LSTM Hyperparameters
-_INPUT_SIZE_LSTM = 11,  # Number of features 246 if all stations of sunpoint are used or 11 for IFE
-_HIDDEN_SIZE_LSTM = 25, # Number of nodes in hidden layer
-_NUM_LAYERS_LSTM = 2, # Number of layers
-_WINDOW_SIZE = 24,#24, # Lookback size
-_PRED_LENGTH = 12,#12, # Horizon size
+lstm_input_size = 22,  # Number of features 246 if all stations of sunpoint are used or 11,22 for IFE
+lstm_hidden_size = [12,12], # LIST of number of nodes in hidden layers TODO will run into error if layers of different sizes. This is because hidden activation
+lstm_num_layers = 2, # Number of layers
+
+dnn_input_size = 22,  # input will be that * window_size
+dnn_hidden_size = [12,24], # LIST of number of nodes in hidden layers
+dnn_num_layers = 2, # Number of layers
+dnn_activation = 'relu', # Activation function
 # Lattice Hyperparameters
-_NUM_LAYERS_LATTICE = 1, # Number of layers
-_NUM_KEYPOINTS = 5, # Number of keypoints
-_INPUT_DIM_LATTICE_FIRST_LAYER = 1, # Number of input dimensions in first layer - from this number of lattices in layer is derived
+lattice_num_layers = 1, # Number of layers
+lattice_num_per_layer = [1], # LIST
+lattice_dim_input = [13], # List of input dims of lattices per layer
+lattice_num_keypoints = 2, # Number of keypoints
+lattice_calibration_num_keypoints = 5, # Number of keypoints in calibration layer
+
+
 # Extra Loss Hyperparameters
-_BEYOND_LAMBDA = 0.0, # Lambda for beyond loss
-_SCALE_SHARPNESS = True, # Determines if sharpness is scaled by quantile
+loss_calibration_lambda = 0.0, # Lambda for beyond loss
+loss_calibration_scale_sharpness = True, # Determines if sharpness is scaled by quantile
 
-_LOSS = 1, #Index of loss_option
-loss_option = ['calibration_sharpness_loss', 'pinball_loss'],
+loss = 'pinball_loss', 
+#options = 'calibration_sharpness_loss', 'pinball_loss',
 
-_REGULAR_OPTIMIZER = 0, #Index of optimizer_option
-optimizer_option = ['Adam', 'RAdam', 'NAdam', 'RMSprop', 'AdamW'],
+optimizer = 'Adam', # dont try to rename. this is used to search for optimizer in builder.py
+#optimizer_option = 'Adam', 'RAdam', 'NAdam', 'RMSprop', 'AdamW',
 
 
-_Metrics =  {"PICP": None,"ACE": None,"PINAW": None, "MAE": None, "RMSE": None}, #"Calibration": None}#{"RMSE": None, "MAE": None, "skill_score": None}
+metrics =  {"ACE": [], 
+            "MAE": [], 
+            "RMSE": [],
+            "CS_L": [],  # new abbreviation for Calibration Sharpness Loss or Beyond Loss
+            "CRPS": []}, 
+            #TODO SkillScore
+array_metrics = {"PICP": None,
+            "Cali_PICP": None,
+            "PINAW": None, 
+            }, # metrics which are in lists and thus not suitable for neptune logging. We will calculate them seperately and push them into the example plots
 
-_MODEL = 1, #Index of model_options
-_model_options = ["LSTM_Lattice", "LSTM_Linear"], 
 
-_METRICS_EVERY_X = 1 # Determines how often metrics are calculated depending on Epoch number
+
+metrics_quantile_dim = 5, # can be 5, 9 for more accuracy, or 99 for full quantile range
+
+input_model = "dnn",
+#options = "lstm", "dnn"
+output_model = "constrained_linear",
+#options = "lattice", "linear", "constrained_linear", "linear_lattice", "lattice_linear"
+
+
+valid_metrics_every = 1, # Determines how often metrics are calculated depending on Epoch number
+valid_plots_every = 5, # Determines how often plots are calculated depending on Validation and epoch number
+neptune_tags = [], # List of tags for neptune
+
+save_all_epochs = False, # Determines if all epochs are saved
+save_path_model_epoch = "models_save/" # Path for saving models
+
+
+
 )
+
+# Check for parameter consistency
+assert len(params['lstm_hidden_size']) == params['lstm_num_layers'], "Number of hidden layers must match number of hidden sizes"
+assert len(params['lattice_num_per_layer']) == params['lattice_num_layers'], "Number of lattice layers must match number of lattice sizes"
+assert len(params['lattice_dim_input']) == params['lattice_num_layers'], "Number of lattice layers must match number of input dimensions"
+

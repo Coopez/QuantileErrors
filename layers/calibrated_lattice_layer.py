@@ -18,7 +18,7 @@ from pytorch_lattice.utils.models import (
     initialize_output_calibrator,
 )
 from pytorch_lattice.models.features import CategoricalFeature, NumericalFeature
-from pytorch_lattice.layers import RTL
+from layers.rtl import RTL
 
 
 import numpy as np
@@ -76,6 +76,7 @@ class CalibratedLatticeLayer(ConstrainedModule):
         output_size: Optional[int] = None,
         input_dim_per_lattice: int = 1,
         num_lattice: int = 1,
+        num_keypoints: int = 2,
         device=None,
     ) -> None:
         """Initializes an instance of `CalibratedLattice`.
@@ -111,6 +112,7 @@ class CalibratedLatticeLayer(ConstrainedModule):
         self.lattice = RTL(
             num_lattices= num_lattice,
             lattice_rank=input_dim_per_lattice,
+            lattice_size=num_keypoints,
             monotonicities=self.monotonicities,
             clip_inputs=self.clip_inputs,
             output_min=self.output_min,

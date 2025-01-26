@@ -51,7 +51,9 @@ class CalibratedLatticeModel(nn.Module):
         input_dim_per_lattice: int = 1,
         num_lattice_first_layer: int = 1,
         output_size: int = 1,
-        calibration_keypoints: int = 5,
+        lattice_keypoints: int = 2,
+        output_calibration_num_keypoints: Optional[int] = None,
+        model_type: str = 'lattice_linear',
         device=None,
     ) -> None:
         super().__init__()
@@ -80,7 +82,8 @@ class CalibratedLatticeModel(nn.Module):
                 interpolation=interpolation,
                 input_dim_per_lattice = self.input_dim_per_lattice,
                 num_lattice= layer_size,
-                output_calibration_num_keypoints=calibration_keypoints,
+                output_calibration_num_keypoints=output_calibration_num_keypoints,
+                num_keypoints=lattice_keypoints,
                 device=device,
             )
             layer_size = int(layer_size/_decrease_factor)
@@ -99,12 +102,13 @@ class CalibratedLatticeModel(nn.Module):
                 interpolation=interpolation,
                 input_dim_per_lattice = self.input_dim_per_lattice,
                 num_lattice= layer_size,
-                output_calibration_num_keypoints=calibration_keypoints,
+                output_calibration_num_keypoints=output_calibration_num_keypoints,
+                num_keypoints=lattice_keypoints,
                 # output specific parameters
                 output_size=output_size,
             )
         )
-        self.lattice_layers = nn.ModuleList(self.lattice_layers)
+        self.lattice_layers = nn.Sequential(self.lattice_layers) #nn.ModuleList(self.lattice_layers)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -115,8 +119,9 @@ class CalibratedLatticeModel(nn.Module):
             torch.Tensor: Output tensor after passing through all lattice layers.
         """
         x = calibrate_and_stack(x, self.calibrators)
-        for lattice_layer in self.lattice_layers: #TODO: Does this need to be in a loop?
-            x = lattice_layer(x)
+        # for lattice_layer in self.lattice_layers: #TODO: Does this need to be in a loop?
+        #     x = lattice_layer(x)
+        x = self.lattice_layers(x) # with sequential i dont need to loop
         return x
     
     @torch.no_grad()

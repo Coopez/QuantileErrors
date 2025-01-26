@@ -1,0 +1,140 @@
+# Training loop
+
+import torch
+from losses.qr_loss import sharpness_loss
+import numpy as np
+from neptune.utils import stringify_unsupported
+
+
+def train_model(params,
+                model,
+                optimizer,
+                criterion,
+                metric,
+                dataloader,
+                dataloader_valid,
+                data,
+                data_valid,
+                log_neptune=False,
+                verbose=False, 
+                neptune_run=None):
+    
+    if log_neptune:
+        run = neptune_run 
+        run_name = run["sys/id"].fetch()
+    else:
+        run_name = 'local_test_run'
+
+    epochs = params['epochs']
+    if params['deterministic_optimization']:
+        epochs = 1
+    for epoch in range(epochs):
+        start_time = torch.cuda.Event(enable_timing=True)
+        start_time.record()
+        end_time = torch.cuda.Event(enable_timing=True)
+        train_losses = []
+        sharp_losses = []
+        model.train()
+        for batch in dataloader:
+            training_data, target, cs = batch
+             # 2 quantiles because sharpness loss is logged
+            if params['deterministic_optimization']:
+                def closure():
+                    optimizer.zero_grad()
+                    quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
+                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],mode='train')
+                    loss = criterion(output, target, quantile.unsqueeze(-1))
+                    #loss.backward()
+                    return loss
+                optimizer.step(closure)
+            else:
+                
+                quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
+                output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
+                # Compute loss
+                loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
+
+                #Backward pass and optimization
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                train_losses.append(loss.item())
+
+                with torch.no_grad():
+                    sharpness = sharpness_loss(output,quantile,scale_sharpness_scale=params['loss_calibration_scale_sharpness'])
+                    sharp_losses.append(sharpness.item())
+                if log_neptune:
+                    run['train/'+params['loss']].log(np.mean(train_losses))
+                    if params['loss'] == 'calibration_sharpness_loss':
+                        run['train/sharpness'].log(np.mean(sharp_losses))
+        
+        epoch_path = params['save_path_model_epoch']
+        save_model_per_epoch(run_name, model, epoch_path, epoch, save_all=params['save_all_epochs'])
+
+        model.eval()
+        
+        if epoch % params['valid_metrics_every'] == 0:
+            metric_dict = params['metrics']
+            with torch.no_grad():
+                for batch in dataloader_valid:
+                    training_data, target,cs = batch
+                    
+                    # There is not reason not to already use a quantile range here, as we are not training
+                
+                    quantile,q_range = data_valid.return_quantile(training_data.shape[0],quantile_dim=params["metrics_quantile_dim"])
+
+                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
+                    
+                    metric_dict= metric(pred = output, truth = target, quantile = quantile,metric_dict=metric_dict,q_range=q_range)
+                    
+            # if log_neptune:
+            #     #log all metrics in metric_dict to neptune
+            #     for key, value in metric_dict.items():
+            #         # test if value is a list 
+            #         if isinstance(value[0], np.ndarray): # need to check if in the list of batch accumulated values we have an array
+            #                 value = np.stack(value,axis=-1).mean(axis=-1).tolist()
+            #                 run['valid/'+key].log(stringify_unsupported(value))
+            #         else:
+            #             run['valid/'+key].log(np.mean(value))
+        
+        end_time.record()
+        torch.cuda.synchronize() 
+        epoch_time = start_time.elapsed_time(end_time)/ 1000 # is in ms. Need to convert to seconds
+        step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time , "Train_Loss": np.mean(train_losses)}
+        if params['loss']== 'calibration_sharpness_loss':
+            step_meta["Sharpness"] = np.mean(sharp_losses)
+        metric.summarize_metrics({**step_meta, **metric_dict})
+
+    return model
+
+
+def forward_pass(params:dict,
+                 model: torch.nn.Module,
+                 batch:torch.Tensor, 
+                 quantile: torch.Tensor,
+                 quantile_dim:int):
+    """
+    Handels forward pass through model and does X amount of passes for different quantiles."""
+    
+    assert quantile_dim == quantile.shape[-1], 'Quantile dimension must match quantile tensor'
+
+    output = torch.zeros((batch.size()[0],params['horizon_size'],quantile_dim))
+    model.train()
+    embedded = model[0](batch)
+    
+    for i in range(quantile_dim):
+        aggregated_input = torch.cat([embedded,quantile[...,i]],dim=-1)
+        output[...,i] = model[1](aggregated_input)
+    return output
+
+
+def save_model_per_epoch(run_name, model: torch.nn.Module, path:str, epoch:int, save_all:bool=False):
+
+    if save_all:
+        torch.save(model.state_dict(), path+f"{run_name}_epoch_{epoch}.pt")
+    else:
+        torch.save(model.state_dict(), path+f"{run_name}.pt")
+    
+
+def generate_validation_plots(x,y):
+    pass #TODO

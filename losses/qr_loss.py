@@ -20,18 +20,43 @@ def sqr_loss(y_pred,y_true,quantile,type='pinball_loss'):
 
 class SQR_loss():
     def __init__(self,type='pinball_loss',lambda_=0.5,scale_sharpness=False):
+        self.singular_loss = True # if True only one quantile is used for pinball loss calculation //TODO test the other case
         self.type = type
         self.lambda_ = lambda_ # lambda for calibration_sharpness_loss, determining weight of sharpness component
         self.scale_sharpness = scale_sharpness # scale sharpness component by quantile
     def __call__(self,y_pred,y_true,quantile):
-        quantile = quantile[:,0:y_pred.shape[1],:] # cut off excess quantiles if necess
+        if quantile.shape[1] > y_pred.shape[1]:
+            quantile = quantile[:, :y_pred.shape[1], :]  # cut off excess quantiles if necessary
+        elif quantile.shape[1] < y_pred.shape[1]:
+            quantile = quantile.repeat(1, y_pred.shape[1] // quantile.shape[1], 1)
+        else:
+            pass
         if not (len(y_pred.shape) == len(y_true.shape) == len(quantile.shape)):
             warnings.warn('All inputs should have the same number of dimensions')
-        if self.type == 'pinball_loss':
-            return torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
+        if self.type == 'pinball_loss': #TODO this could be correctly extended to work with multiple quantiles
+            if quantile.shape[-1] == 1:
+                loss = torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
+                return loss
+            elif quantile.shape[-1] == 2 and self.singular_loss==True: # for now ignore the other quantiles
+                quantile = quantile[...,0].unsqueeze(-1)
+                y_pred = y_pred[...,0].unsqueeze(-1)
+                return torch.mean(torch.max(torch.mul(quantile,(y_true-y_pred)),torch.mul((quantile-1),(y_true-y_pred))))
+            else:
+                losses = []
+                y_true = y_true.squeeze(-1)
+                for i in range(0,quantile.shape[-1]):
+                    # quantile[...,i].unsqueeze(-1)
+                    losses.append(torch.mean(torch.max(torch.mul(quantile[...,i],(y_true-y_pred[...,i])),torch.mul((quantile[...,i]-1),(y_true-y_pred[...,i])))))
+                return torch.mean(torch.stack(losses))
+                
         elif self.type == 'calibration_sharpness_loss':
+            if y_pred.shape[2] > 2:
+                # make sure to delete excess quantiles
+                # this is a bit biased, but we can live with that.
+                quantile = torch.concat((quantile[...,1].unsqueeze(-1),quantile[...,-2].unsqueeze(-1)),dim=-1)
+                y_pred = torch.concat((y_pred[...,1].unsqueeze(-1),y_pred[...,-2].unsqueeze(-1)),dim=-1)
             # Expects y_pred to be of size (batch_size,window_size,2) for quantile and 1-quantile
-            if y_pred.shape[2] != 2: #not motivated to fix this for now
+            if y_pred.shape[2] < 2: #not motivated to fix this for now
                 return torch.zeros(1)
             calibration = calibration_loss(y_pred[...,0].unsqueeze(-1),y_true,quantile)
             neg_calibration = calibration_loss(y_pred[...,1].unsqueeze(-1),y_true,1-quantile) # we already predict the negative quantile anyways (for sharpness), why not use it?
@@ -98,7 +123,12 @@ def sharpness_loss(y_pred,quantile,scale_sharpness_scale=False):
     """
     sharpness component checks how far apart sister quantiles are and penalizes in turn
     """
-    quantile = quantile[:,0:y_pred.shape[1],:] # cut off excess quantiles if necessary
+    if quantile.shape[1] > y_pred.shape[1]:
+        quantile = quantile[:, :y_pred.shape[1], :]  # cut off excess quantiles if necessary
+    elif quantile.shape[1] < y_pred.shape[1]:
+        quantile = quantile.repeat(1, y_pred.shape[1] // quantile.shape[1], 1)
+    else:
+        pass 
     if scale_sharpness_scale:
         scale_sharpness = quantile_sharpness_scale(quantile)
     else:

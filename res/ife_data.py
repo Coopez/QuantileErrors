@@ -15,7 +15,7 @@ def preprocess_ife_data(params:dict):
     result = interpolate_new_columns(source, result)
     result = embedd_time(result)
 
-    result['CSI'] = result['GHI_clear'] / result['GHI']
+    result['CSI'] = result['GHI'] / (result['GHI_clear'])
  
     
     pd.to_pickle(result,'IFE_dataset_model/trainval_df_preprocessed.pkl')
@@ -23,18 +23,29 @@ def preprocess_ife_data(params:dict):
     return 
 
 
-def import_ife_data(params:dict):
+def import_ife_data(params:dict, dtype = "float32"):
     # Load data
     trainval_df = pd.read_pickle('IFE_dataset_model/trainval_df_preprocessed.pkl')
-    trainval_df = trainval_df.iloc[:,[7, 0, 1, 2, 3, 4, 5, 6, 10, 11, 12]] # features to use
+    if params["target"] == 'CSI':
+        trainval_df = trainval_df.iloc[:,[-1,7, 0, 1, 2, 3, 4, 5, 6, 10, 11, 12,13,14,15,16,17,18,19,20,21,22]] # features to use - 8 and 9 are out
+    elif params['target'] == 'GHI':
+        trainval_df = trainval_df.iloc[:,[7, -1,0, 1, 2, 3, 4, 5, 6, 10, 11, 12,13,14,15,16,17,18,19,20,21,22]]
+    elif params['target'] == 'ERLING_SETTINGS':
+        trainval_df = trainval_df.iloc[:,[7, 0, 1, 2, 3, 4, 5, 6, 10, 11, 12]]
+    else:
+        raise NotImplementedError
     index_trainval = pd.read_pickle('IFE_dataset_model/trainval_C_index.pkl')
     # Split data
-    split = "2024-" # 
+    if dtype == "float32":
+        trainval_df = trainval_df.astype(np.float32)
+    split = 0.74 #0.78  TODO find out why 0.78 returns the wrong day.
     train_data = trainval_df.iloc[:int(len(index_trainval)*split)]
-    val_data = trainval_df.iloc[int(len(index_trainval)*(1-split)):]
-    train_target = train_data['GHI']
-    val_target = val_data['GHI']
-    return train_data, train_target, val_data, val_target
+    val_data = trainval_df.iloc[int(len(index_trainval)*(split)):]
+    train_target = train_data['CSI']
+    val_target = val_data['CSI']
+    cs_train = train_data["GHI_clear"]
+    cs_val = val_data["GHI_clear"]
+    return train_data, train_target, val_data, val_target, cs_train, cs_val 
 
 
 
@@ -106,8 +117,14 @@ def interpolate_new_columns(main_df, variance_df):
     """
     """
         # Ensure timezone consistency
-    main_df = main_df.tz_localize(None) if main_df.index.tz is not None else main_df
-    variance_df = variance_df.tz_localize(None) if variance_df.index.tz is not None else variance_df
+    if main_df.index.tz is not None:
+        if variance_df.index.tz is None:
+        # Use 'infer' for ambiguous times
+            variance_df.index = variance_df.index.tz_localize(main_df.index.tz, ambiguous=True,nonexistent='shift_forward')
+        else:
+            variance_df.index = variance_df.index.tz_convert(main_df.index.tz)
+    # main_df = main_df.tz_localize(None) if main_df.index.tz is not None else main_df
+    # variance_df = variance_df.tz_localize(None) if variance_df.index.tz is not None else variance_df
     
     # Select only variance-related columns
     variance_cols = [col for col in variance_df.columns if 'variance' in col or 'mean' in col]

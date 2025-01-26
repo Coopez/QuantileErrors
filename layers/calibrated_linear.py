@@ -84,10 +84,10 @@ class Linear(ConstrainedModule):
         self.use_bias = use_bias if not weighted_average else False
         self.weighted_average = weighted_average
 
-        self.kernel = torch.nn.Parameter(torch.Tensor(input_dim, output_dim).double(),requires_grad=True)
+        self.kernel = torch.nn.Parameter(torch.Tensor(input_dim, output_dim),requires_grad=True)
         torch.nn.init.constant_(self.kernel, 1.0 / input_dim)
         if use_bias:
-            self.bias = torch.nn.Parameter(torch.zeros(output_dim).double(),requires_grad=True)
+            self.bias = torch.nn.Parameter(torch.zeros(output_dim),requires_grad=True)
             #torch.nn.init.constant_(self.bias, 0.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
