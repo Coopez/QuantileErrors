@@ -4,6 +4,8 @@ import torch
 from losses.qr_loss import sharpness_loss
 import numpy as np
 from neptune.utils import stringify_unsupported
+from debug.model import print_model_parameters
+from debug.plot import Debug_model
 
 
 def train_model(params,
@@ -18,7 +20,8 @@ def train_model(params,
                 log_neptune=False,
                 verbose=False, 
                 neptune_run=None):
-    
+    if params['debug']:
+        print_model_parameters(model)
     if log_neptune:
         run = neptune_run 
         run_name = run["sys/id"].fetch()

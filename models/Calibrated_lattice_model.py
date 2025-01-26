@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from typing import Optional, Union
 from pytorch_lattice.models.features import NumericalFeature, CategoricalFeature
-
+from layers.calibrated_linear import Linear
 from typing import Optional, Union
 
 from pytorch_lattice.enums import (
@@ -48,16 +48,17 @@ class CalibratedLatticeModel(nn.Module):
         kernel_init: LatticeInit = LatticeInit.LINEAR,
         interpolation: Interpolation = Interpolation.HYPERCUBE,
         num_layers: int = 1,
-        input_dim_per_lattice: int = 1,
-        num_lattice_first_layer: int = 1,
+        input_dim_per_lattice: list = [],
+        num_lattice_per_layer: list = [],
         output_size: int = 1,
         lattice_keypoints: int = 2,
         output_calibration_num_keypoints: Optional[int] = None,
         model_type: str = 'lattice_linear',
+        input_dim: int = 23,
+        downsampled_input_dim: int = 13,
         device=None,
     ) -> None:
         super().__init__()
-        _decrease_factor = 2 # hardcoded for now - decreases the number of lattices in each layer
         self.features = features
         # grabbed from layers/calibrated_lattice_layer.py
         self.monotonicities = initialize_monotonicities(features)
@@ -67,8 +68,23 @@ class CalibratedLatticeModel(nn.Module):
             output_max=[feature.lattice_size - 1 for feature in features],
         )
         self.input_dim_per_lattice = input_dim_per_lattice
+        self.layer_dims = num_lattice_per_layer
+        self.output_size = output_size
         self.lattice_layers = []
-        layer_size = num_lattice_first_layer
+        if model_type == 'lattice':
+            self.output_size = None
+        
+        if model_type == 'linear_lattice':
+            self.lattice_layers.append(
+                Linear(
+                    input_dim=input_dim,
+                    output_dim=downsampled_input_dim,
+                    monotonicities=self.monotonicities,
+                    use_bias=True,
+                    weighted_average=False,
+                ))
+            self.monotonicities = ['increasing' for _ in range(downsampled_input_dim)]
+
 
         # Construct lattice layers
         for i in range(num_layers-1):
@@ -80,15 +96,13 @@ class CalibratedLatticeModel(nn.Module):
                 output_max=output_max,
                 kernel_init=kernel_init,
                 interpolation=interpolation,
-                input_dim_per_lattice = self.input_dim_per_lattice,
-                num_lattice= layer_size,
+                input_dim_per_lattice = self.input_dim_per_lattice[i],
+                num_lattice= self.layer_dims[i],
                 output_calibration_num_keypoints=output_calibration_num_keypoints,
                 num_keypoints=lattice_keypoints,
                 device=device,
             )
-            layer_size = int(layer_size/_decrease_factor)
             
-            self.input_dim_per_lattice = _decrease_factor * layer_size
             self.lattice_layers.append(lattice_layer)
             self.monotonicities = lattice_layer.lattice.output_monotonicities()
         # Last Lattice Layer
@@ -100,12 +114,13 @@ class CalibratedLatticeModel(nn.Module):
                 output_max=output_max,
                 kernel_init=kernel_init,
                 interpolation=interpolation,
-                input_dim_per_lattice = self.input_dim_per_lattice,
-                num_lattice= layer_size,
+                input_dim_per_lattice = self.input_dim_per_lattice[-1],
+                num_lattice= self.layer_dims[-1],
                 output_calibration_num_keypoints=output_calibration_num_keypoints,
                 num_keypoints=lattice_keypoints,
                 # output specific parameters
-                output_size=output_size,
+                output_size=self.output_size,
+                device=device,
             )
         )
         self.lattice_layers = nn.Sequential(self.lattice_layers) #nn.ModuleList(self.lattice_layers)

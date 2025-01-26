@@ -41,12 +41,14 @@ def build_model(params, device, features=None) -> Sequential:
                                         output_min= 0,
                                         output_max= 1,
                                         num_layers= params["lattice_num_layers"],
-                                        input_dim_per_lattice= params["lattice_input_dim_per_lattice"],
-                                        num_lattice_first_layer= params["lattice_dim_input"],
+                                        input_dim_per_lattice= params["lattice_dim_input"],
+                                        num_lattice_per_layer= params["lattice_num_per_layer"],
                                         output_size= params["horizon_size"],
                                         calibration_keypoints= params["lattice_calibration_num_keypoints"],
                                         lattice_keypoints= params["lattice_num_keypoints"],
                                         model_type= params["output_model"],
+                                        input_dim= data_output_size,
+                                        downsampled_input_dim= params["lattice_donwsampled_dim"],
                                         device= device
         )
 

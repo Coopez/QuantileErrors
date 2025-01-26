@@ -8,6 +8,8 @@ _VERBOSE = True # determines if printouts to console are made - should be False 
 # Hyperparameters
 params = dict(
 
+debug = False, # Determines some debug outputs
+
 batch_size = 64, # Batchsize
 random_seed = 0, # Random seed
 train_shuffle = True, # Determines if data is shuffled
@@ -35,6 +37,7 @@ lattice_num_per_layer = [1], # LIST
 lattice_dim_input = [13], # List of input dims of lattices per layer
 lattice_num_keypoints = 2, # Number of keypoints
 lattice_calibration_num_keypoints = 5, # Number of keypoints in calibration layer
+lattice_donwsampled_dim = 13, # Dimension of downsampled input when using linear_lattice
 
 
 # Extra Loss Hyperparameters
