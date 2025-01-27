@@ -41,11 +41,23 @@ def import_ife_data(params:dict, dtype = "float32"):
     split = 0.74 #0.78  TODO find out why 0.78 returns the wrong day.
     train_data = trainval_df.iloc[:int(len(index_trainval)*split)]
     val_data = trainval_df.iloc[int(len(index_trainval)*(split)):]
-    train_target = train_data['CSI']
-    val_target = val_data['CSI']
+
+    idx = list(range(len(trainval_df.index)))
+
+    train_idx = idx[:int(len(index_trainval)*split)]
+    val_idx = idx[int(len(index_trainval)*(split)):]
+    # train_idx = train_data.index.tolist()  # Indices of train_data
+    # val_idx = val_data.index.tolist()  
+        # Indices of val_data
+    if params["target"] == 'CSI':
+        train_target = train_data['CSI']
+        val_target = val_data['CSI']
+    elif params['target'] == 'GHI' or params['target'] == 'ERLING_SETTINGS':
+        train_target = train_data['GHI']
+        val_target = val_data['GHI']
     cs_train = train_data["GHI_clear"]
     cs_val = val_data["GHI_clear"]
-    return train_data, train_target, val_data, val_target, cs_train, cs_val 
+    return train_data, train_target, val_data, val_target, cs_train, cs_val, trainval_df.index, train_idx, val_idx 
 
 
 

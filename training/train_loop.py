@@ -13,13 +13,15 @@ def train_model(params,
                 optimizer,
                 criterion,
                 metric,
+                metric_plots,
                 dataloader,
                 dataloader_valid,
                 data,
                 data_valid,
                 log_neptune=False,
                 verbose=False, 
-                neptune_run=None):
+                neptune_run=None,
+                overall_time = []):
     if params['debug']:
         print_model_parameters(model)
     if log_neptune:
@@ -39,7 +41,7 @@ def train_model(params,
         sharp_losses = []
         model.train()
         for batch in dataloader:
-            training_data, target, cs = batch
+            training_data, target, cs, _ = batch
              # 2 quantiles because sharpness loss is logged
             if params['deterministic_optimization']:
                 def closure():
@@ -78,9 +80,10 @@ def train_model(params,
         
         if epoch % params['valid_metrics_every'] == 0:
             metric_dict = params['metrics']
+            metric_array_dict = params['array_metrics']
             with torch.no_grad():
                 for batch in dataloader_valid:
-                    training_data, target,cs = batch
+                    training_data, target,cs, idx = batch
                     
                     # There is not reason not to already use a quantile range here, as we are not training
                 
@@ -88,8 +91,14 @@ def train_model(params,
 
                     output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
                     
-                    metric_dict= metric(pred = output, truth = target, quantile = quantile,metric_dict=metric_dict,q_range=q_range)
-                    
+                    metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range)
+
+                    if epoch % params['valid_plots_every'] == 0:
+                        metric_array_dict = metric_plots.accumulate_array_metrics(metric_array_dict,pred = output, truth = target, quantile = q_range) #q_range is just the quantiles in a range arrangement. 
+
+            if epoch % params['valid_plots_every'] == 0:
+                metric_plots.generate_metric_plots(metric_array_dict,neptune_run=neptune_run, dataloader_length=len(dataloader_valid))
+                metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[idx.detach().cpu().numpy()], neptune_run=neptune_run)
             # if log_neptune:
             #     #log all metrics in metric_dict to neptune
             #     for key, value in metric_dict.items():

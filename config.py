@@ -16,10 +16,10 @@ train_shuffle = True, # Determines if data is shuffled
 valid_shuffle = True, # Determines if data is shuffled
 target = 'GHI', # or 'GHI' or 'ERLING_SETTINGS'
 learning_rate = 0.0001, #0.1, # Learning rate
-epochs = 300, # Number of epochs
+epochs = 10, # Number of epochs
 deterministic_optimization= False, # Determines if optimization is deterministic
-window_size = 3,#30,#24, # Lookback size
-horizon_size = 6,#90,#12, # Horizon size
+window_size = 60,#30,#24, # Lookback size
+horizon_size = 90,#90,#12, # Horizon size
 
 
 # LSTM Hyperparameters
@@ -57,23 +57,26 @@ metrics =  {"ACE": [],
             "CS_L": [],  # new abbreviation for Calibration Sharpness Loss or Beyond Loss
             "CRPS": []}, 
             #TODO SkillScore
-array_metrics = {"PICP": None,
-            "Cali_PICP": None,
-            "PINAW": None, 
+array_metrics = {"PICP": [],
+            "Cali_PICP": [],
+            "PINAW": [], 
             }, # metrics which are in lists and thus not suitable for neptune logging. We will calculate them seperately and push them into the example plots
 
 
 
-metrics_quantile_dim = 5, # can be 5, 9 for more accuracy, or 99 for full quantile range
+metrics_quantile_dim = 9, # can be 5, 9 for more accuracy, or 99 for full quantile range
 
 input_model = "dnn",
 #options = "lstm", "dnn"
-output_model = "constrained_linear",
+output_model = "linear",
 #options = "lattice", "linear", "constrained_linear", "linear_lattice", "lattice_linear"
 
 
 valid_metrics_every = 1, # Determines how often metrics are calculated depending on Epoch number
-valid_plots_every = 5, # Determines how often plots are calculated depending on Validation and epoch number
+valid_plots_every = 1, # Determines how often plots are calculated depending on Validation and epoch number
+valid_plots_sample_size = 4, # Sample size for plots
+valid_plots_save_path = "plots_save/", # Path for saving plots
+
 neptune_tags = [], # List of tags for neptune
 
 save_all_epochs = False, # Determines if all epochs are saved

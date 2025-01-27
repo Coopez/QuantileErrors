@@ -6,6 +6,7 @@ torch.set_default_device(device)
 from debug.plot import Debug_model
 ##############################
 from metrics.metrics import Metrics
+from metrics.metric_plots import MetricPlots
 from res.data import data_import, Data_Normalizer
 from res.ife_data import import_ife_data 
 from dataloader.calibratedDataset import CalibratedDataset
@@ -44,8 +45,8 @@ if _DATA_DESCRIPTION ==  "Station 11 Irradiance Sunpoint":
         train = train[:,11] # disable if training on all features/stations
     valid = valid[:,11]
 elif _DATA_DESCRIPTION == "IFE Skycam":
-    train,train_target,valid,valid_target,cs_train, cs_valid= import_ife_data(params) # has 22 features now, 11 without preprocessing
-    train,train_target,valid,valid_target, cs_train, cs_valid= train.values,train_target.values,valid.values,valid_target.values, cs_train.values, cs_valid.values
+    train,train_target,valid,valid_target,cs_train, cs_valid, overall_time, train_index, valid_index= import_ife_data(params) # has 22 features now, 11 without preprocessing
+    train,train_target,valid,valid_target, cs_train, cs_valid, overall_time= train.values,train_target.values,valid.values,valid_target.values, cs_train.values, cs_valid.values, overall_time.values
 else:
     raise ValueError("Data description not implemented")
 
@@ -61,10 +62,10 @@ X = return_Dataframe(train)
 
 Xv = return_Dataframe(valid)
 #features = return_features(quantiles,params,data=train)
-data = CalibratedDataset(X, y,cs_train, device=device,params=params) 
+data = CalibratedDataset(X, y,cs_train, train_index, device=device,params=params) 
 dataloader = torch.utils.data.DataLoader(data, batch_size=params['batch_size'], shuffle=params['train_shuffle'], generator=torch.Generator(device=device))
 
-data_valid = CalibratedDataset(Xv, valid_target,cs_valid, device=device,params=params)
+data_valid = CalibratedDataset(Xv, valid_target,cs_valid,valid_index, device=device,params=params)
 data_loader_valid = torch.utils.data.DataLoader(data_valid, batch_size=params['batch_size'], shuffle=params['valid_shuffle'], generator=torch.Generator(device=device))
 
 features_lattice = return_features(quantiles,params,data=None)
@@ -79,7 +80,7 @@ if _LOG_NEPTUNE:
 
 criterion = SQR_loss(type=params['loss'], lambda_=params['loss_calibration_lambda'], scale_sharpness=params['loss_calibration_scale_sharpness'])
 metric = Metrics(params,Normalizer,_DATA_DESCRIPTION)
-
+metric_plots = MetricPlots(params,Normalizer,sample_size=params["valid_plots_sample_size"],log_neptune=_LOG_NEPTUNE)
 optimizer = build_optimizer(params, model)
 
 model = train_model(params = params,
@@ -87,13 +88,15 @@ model = train_model(params = params,
                 optimizer = optimizer,
                 criterion = criterion,
                 metric = metric,
+                metric_plots = metric_plots,
                 dataloader = dataloader,
                 dataloader_valid = data_loader_valid,
                 data = data,
                 data_valid = data_valid,
                 log_neptune=_LOG_NEPTUNE,
                 verbose=_VERBOSE, 
-                neptune_run=  run)
+                neptune_run=  run,
+                overall_time = overall_time)
 
 
 if _LOG_NEPTUNE:

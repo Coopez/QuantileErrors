@@ -13,6 +13,7 @@ class CalibratedDataset(torch.utils.data.Dataset):
         X: pd.DataFrame,
         y: np.ndarray,
         cs: np.ndarray = None,
+        idx: np.ndarray = None,
         device: str = "cpu",
         params: str = dict(),
     ):
@@ -44,7 +45,7 @@ class CalibratedDataset(torch.utils.data.Dataset):
         else:
             self.quantiles = None
 
-
+        self.idx = torch.tensor(idx).to(device) 
         self.data = torch.from_numpy(Xc.values).to(device) 
         self.targets = torch.from_numpy(y.copy())[:, None].to(device)
         if cs is not None:
@@ -54,22 +55,12 @@ class CalibratedDataset(torch.utils.data.Dataset):
         return self.length - self.window_size - self.horizon_size + 1
 
     def __getitem__(self, idx):
-        # if isinstance(idx, torch.Tensor):
-        #     idx = idx.tolist()
+
         x = self.data[idx : idx + self.window_size]
         y = self.targets[idx + self.window_size : idx + self.window_size + self.horizon_size]
-        # if self.quantiles is not None:
-        #     quantile = torch.rand(1, device = self.device)
-        #     # expand q to x
-        #     q = quantile.repeat(self.window_size)
-        #     #q = self.quantiles[idx + self.window_size]
-        #     #q = torch.from_numpy(q)[:, None].to(self.device)
-        #     return [x, q,y]
-        # if self.FLAG_pass_CS:
-        #     cs = self.cs[idx + self.window_size : idx + self.window_size + self.horizon_size] # passing target cs for transformation later.
-        # else:
-        cs = torch.zeros(self.horizon_size,1).to(self.device)
-        return [x,y,cs] # DO NOT use cs for input!!
+        cs = self.cs[idx + self.window_size : idx + self.window_size + self.horizon_size]
+        idx = self.idx[idx : idx + self.window_size + self.horizon_size]
+        return [x,y,cs,idx] 
     def return_quantile(self, batchsize,quantile_dim=1):
         """ returns a quantile tensor of shape (batchsize,window_size,quantile_dim) and a quantile range tensor of shape (quantile_dim)"""
         #TODO needs to be 1 not window_size

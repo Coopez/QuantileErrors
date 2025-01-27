@@ -7,3 +7,5 @@ example.py
 kernel_reg.py
 api_key.py
 *.pt
+*.png
+*.jpg

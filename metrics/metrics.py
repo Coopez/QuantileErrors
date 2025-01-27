@@ -81,110 +81,105 @@ def MSPE(pred, true, eps=1e-07, return_mean=True):
 
 
 @torch.no_grad()
-def PINAW(pred, truth, intervals=[0.2, 0.5, 0.9], quantiles=None, return_counts=True, johnson_flag=False, arbitrary_flag=False, data_scaler=None, return_logits=False):
+def PINAW(pred, truth, intervals=[0.2, 0.5, 0.9], quantiles=None, return_counts=True, johnson_flag=False, arbitrary_flag=False, data_scaler=None, return_logits=False,return_array=False):
     if len(truth.shape) == 3: 
         truth = truth.view(-1, truth.shape[-1])
         pred = pred.view(-1, pred.shape[-1])
 
-    num_samples = truth.shape[0]
+    range_samples = torch.max(truth)- torch.min(truth)
 
-    if quantiles is not None: 
-        assert len(quantiles) % 2 == 1
-        quantiles = np.sort(quantiles)
-        intervals = [quantiles[-(i + 1)] - quantiles[i] for i in range(int((len(quantiles) - 1)/2))]
+    # if quantiles is not None: 
+    assert len(quantiles) % 2 == 1
+    quantiles = torch.sort(quantiles)[0]
+    intervals = [quantiles[-(i + 1)] - quantiles[i] for i in range(int((len(quantiles) - 1)/2))]
     _scores = {}
-
-    if arbitrary_flag:
-        assert len(pred.shape) == 2
-        pred = pred.sort(0)[0]
+    _arrary_scores = []
+    _items = []
+    # if arbitrary_flag:
+    #     assert len(pred.shape) == 2
+    #     pred = pred.sort(0)[0]
 
     for i, interval_i in enumerate(intervals): 
-        if quantiles is not None:
+        # if quantiles is not None:
             # quantile prediction. Assumes that the quantiles are in 
             # ascending order and correspond to the intervals
-            ci_l = pred[..., i][..., None]
-            ci_u = pred[..., -(i+1)][..., None]
+        ci_l = pred[..., i][..., None]
+        ci_u = pred[..., -(i+1)][..., None]
 
-        elif arbitrary_flag:
-            int_l = int((0.5 - interval_i / 2) * pred.shape[0])
-            int_u = int((0.5 + interval_i / 2) * pred.shape[0])
-            ci_l = pred[int_l][:, None]
-            ci_u = pred[int_u][:, None]
-        else: 
-            # Assumes normal distribution... 
-            # for interval_i in interval_i:
-            z_val = torch.erfinv(torch.tensor(interval_i)) * np.sqrt(2)
-            mean_i = pred.mean(0)
-            std_i = pred.std(0)
-            ci_l = mean_i - std_i * z_val       #/ (pred.shape[0] ** 0.5)
-            ci_u = mean_i + std_i * z_val
-
-        if data_scaler is not None: 
-            assert len(ci_l.shape) == 2 and ci_l.shape[-1] == 1
-            ci_l = data_scaler(ci_l)
-            ci_u = data_scaler(ci_u)
 
         if return_logits:                
             _scores[np.round(interval_i, 5)] =  np.abs(ci_u - ci_l)
         else:        
             if torch.is_tensor(ci_l):
-                avg_w = (ci_u - ci_l).abs().sum() 
+                avg_w = (ci_u - ci_l).abs().mean() 
             else: 
-                avg_w = np.sum(np.abs(ci_u - ci_l))
+                avg_w = np.mean(np.abs(ci_u - ci_l))
             if return_counts: 
-                _scores[np.round(interval_i, 5)] = np.array([avg_w, num_samples])   # Include the sum of the truth for normalising... 
+                # _scores[np.round(interval_i.item(), 5)] = np.array([avg_w, num_samples])   # Include the sum of the truth for normalising... 
+                _scores[np.round(interval_i.item(), 5)] = torch.stack([avg_w, torch.tensor(range_samples).float()])
+            elif return_array:
+                _arrary_scores.append(avg_w.item() / range_samples.item())
+                _items.append(np.round(interval_i.item(), 5))
             else: 
-                _scores[np.round(interval_i, 5)] = avg_w / num_samples 
-
+                _scores[np.round(interval_i.item(), 5)] = avg_w.item() / range_samples.item()
+    if return_array:
+        return _arrary_scores, _items
     return _scores
 
 @torch.no_grad()
-def PICP_quantile(pred, truth, intervals=None, quantiles=[0.05,0.125,0.25,0.375,0.45,0.5,0.55,0.625,0.75,0.875,0.95], return_counts=True, loss_type=None, data_scaler=None, return_logits=False):
+def PICP_quantile(pred, truth, intervals=None, quantiles=[0.05,0.125,0.25,0.375,0.45,0.5,0.55,0.625,0.75,0.875,0.95], return_counts=True, loss_type=None, data_scaler=None, return_logits=False, return_array=False):
     if len(truth.shape) == 3: 
         truth = truth.view(-1, truth.shape[-1])
         pred = pred.view(-1, pred.shape[-1])
     
-    if data_scaler is not None: 
-        assert len(truth.shape) == 2 and truth.shape[-1] == 1
-        truth = data_scaler(truth)
+    # if data_scaler is not None: 
+    #     assert len(truth.shape) == 2 and truth.shape[-1] == 1
+    #     truth = data_scaler(truth)
    
-    if intervals is not None:
-        intervals = np.sort(intervals)
-        quantiles = [0.5 - intervals[i]/2 for i in range((len(intervals) ))] + [0.5] 
-        quantiles += [0.5 + intervals[i]/2 for i in range((len(intervals) ))]
-        quantiles = np.sort(quantiles)
-    if loss_type=="Pinnball":
-        assert pred.shape[-1] == len(quantiles)
-    else:
-        assert pred.shape[-1] == 4
-        norm_dist = distribution.Normal(pred[:, 0], pred[:, 1]) ### adjusted std here from idx 4 to 2
+    # if intervals is not None:
+    #     intervals = np.sort(intervals)
+    #     quantiles = [0.5 - intervals[i]/2 for i in range((len(intervals) ))] + [0.5] 
+    #     quantiles += [0.5 + intervals[i]/2 for i in range((len(intervals) ))]
+    #     quantiles = np.sort(quantiles)
+    # if loss_type=="Pinnball":
+    #     assert pred.shape[-1] == len(quantiles)
+    # else:
+    #     assert pred.shape[-1] == 4
+    #     norm_dist = distribution.Normal(pred[:, 0], pred[:, 1]) ### adjusted std here from idx 4 to 2
     _scores = {}
+    _array_scores = []
+    _items = []
+    quantiles = torch.sort(quantiles)[0]
     for i, quantile_i in enumerate(quantiles): 
-        if loss_type=="Pinnball":
-            ci = pred[..., i][..., None]
-        else:
-            raise NotImplementedError
+        # if loss_type=="Pinnball":
+        ci = pred[..., i][..., None]
+
         
         if return_logits:                
-            _scores[np.round(quantile_i, 5)] = np.concatenate([(truth <= ci)], -1).all(-1).astype(int)[:, None]
+            _scores[np.round(quantile_i.item(), 5)] = np.concatenate([(truth <= ci)], -1).all(-1).astype(int)[:, None]
             
         else:
             if torch.is_tensor(truth):
-                count_correct = torch.cat([ (truth <= ci)], -1).all(-1).sum() 
+                count_correct = torch.cat([ (truth <= ci)], -1).sum() 
             else: 
                 count_correct = np.concatenate([(truth <= ci)], -1).all(-1).sum()
             if return_counts: 
-                _scores[np.round(quantile_i, 5)] = np.array([count_correct, truth.shape[0]])
+                # _scores[np.round(quantile_i.item(), 5)] = np.array([count_correct, truth.shape[0]]) 
+                _scores[np.round(quantile_i.item(), 5)] = torch.stack([count_correct, torch.tensor(truth.shape[0]).float()])
+            elif return_array:
+                _array_scores.append((count_correct.item() / truth.shape[0]))
+                _items.append(np.round(quantile_i.item(), 5))
             else: 
-                _scores[np.round(quantile_i, 5)] = count_correct / truth.shape[0]
-
+                _scores[np.round(quantile_i.item(), 5)] = count_correct.item() / truth.shape[0]
+    if return_array:
+        return _array_scores, _items
     return _scores
 
 @torch.no_grad()
-def PICP(pred, truth, intervals=[0.1,0.25, 0.5, 0.75, 0.9], quantiles=None, return_counts=True, loss_type = None, arbitrary_flag=False, data_scaler=None, return_logits=False):
-    # if len(truth.shape) == 3: 
-    #     truth = truth.view(-1, truth.shape[-1])
-    #     pred = pred.view(-1, pred.shape[-1])
+def PICP(pred, truth, intervals=[0.1,0.25, 0.5, 0.75, 0.9], quantiles=None, return_counts=True, loss_type = None, arbitrary_flag=False, data_scaler=None, return_logits=False, return_array=False):
+    if len(truth.shape) == 3: 
+        truth = truth.view(-1, truth.shape[-1])
+        pred = pred.view(-1, pred.shape[-1])
     # if data_scaler is not None: 
     #     assert len(truth.shape) == 2 and truth.shape[-1] == 1
     #     truth = data_scaler(truth)
@@ -193,7 +188,8 @@ def PICP(pred, truth, intervals=[0.1,0.25, 0.5, 0.75, 0.9], quantiles=None, retu
         quantiles = torch.sort(quantiles)[0]
         intervals = [quantiles[-(i + 1)] - quantiles[i] for i in range(int((len(quantiles) - 1)/2))]
     _scores = {}
-    
+    _arrary_scores = []
+    _items = []
     for i, interval_i in enumerate(intervals): 
         # if quantiles is not None:
             # quantile prediction. Assumes that the quantiles are in 
@@ -224,9 +220,14 @@ def PICP(pred, truth, intervals=[0.1,0.25, 0.5, 0.75, 0.9], quantiles=None, retu
 
             if return_counts: 
                 _scores[np.round(interval_i.item(), 5)] = torch.stack([count_correct, torch.tensor(truth.shape[0]).float()])
+            elif return_array:
+                _arrary_scores.append(count_correct.item() / truth.shape[0])
+                _items.append(np.round(interval_i.item(), 5))
             else: 
-                _scores[np.round(interval_i.item(), 5)] = count_correct / truth.shape[0]
-
+                _scores[np.round(interval_i.item(), 5)] = count_correct.item() / truth.shape[0]
+    
+    if return_array:
+        return _arrary_scores, _items
     return _scores
 
 @torch.no_grad()
@@ -410,13 +411,16 @@ class Metrics():
             raise ValueError("Metrics: Unknown input model type")  
         self.normalizer = normalizer 
         self.quantile_dim = params['metrics_quantile_dim'] 
+
+        self.cs_multiplier = True if self.params["target"] == "CSI" else False
     @torch.no_grad()
-    def __call__(self, pred, truth,quantile,metric_dict,q_range):
-        results = metric_dict
-        pred_denorm = self.normalizer.inverse_transform(pred)
-        truth_denorm = self.normalizer.inverse_transform(truth)
+    def __call__(self, pred, truth,quantile,cs, metric_dict,q_range):
+        results = metric_dict.copy()
+        pred_denorm = self.normalizer.inverse_transform(pred,"target")
+        truth_denorm = self.normalizer.inverse_transform(truth,"target")
         # we are approx crps with pinball so we do not need pinball loss
-         
+        pred_denorm = pred_denorm *  cs if self.cs_multiplier else pred_denorm
+        truth_denorm = truth_denorm * cs if self.cs_multiplier else truth_denorm
         median = pred_denorm[...,int(self.quantile_dim/2)].unsqueeze(-1)
         for metric in self.metrics:
             
