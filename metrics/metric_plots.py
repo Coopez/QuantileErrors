@@ -9,7 +9,7 @@ import pandas as pd
 
 
 class MetricPlots:
-    def __init__(self, params, normalizer, sample_size=2, log_neptune=False):
+    def __init__(self, params, normalizer, sample_size=1, log_neptune=False):
         self.params = params
         self.sample_size = sample_size
         self.log_neptune = log_neptune
@@ -65,12 +65,14 @@ class MetricPlots:
         plt.ioff()  # Turn off interactive mode
         plt.figure(figsize=(4, 3))
         plt.plot(x, value, label=name, linewidth=3)
-        plt.plot(x, ideal, label="Ideal", linewidth=3)
+        if name != "PINAW":           
+            plt.plot(x, ideal, label="Ideal", linewidth=3)
+            plt.yticks(np.linspace(0, 1, 5))
         plt.xlabel(x_label)  # should be label quantiles for calibration, intervals for picp and pinaw
         plt.ylabel(name)
         plt.legend()
         plt.grid(True)
-        plt.yticks(np.linspace(0, 1, 5))
+        
         plt.xticks(np.linspace(0,1,5))
         plt.tight_layout()  # Adjust layout to prevent label cutoff
         plt.savefig(f"{self.save_path}/{name}_plot.png")
@@ -81,34 +83,34 @@ class MetricPlots:
             neptune_run[f"valid/distribution_{name}"].append(plt_fig)
         plt.close()
 
-    def generate_result_plots(self,data,pred,truth,quantile,cs,time,neptune_run=None):
+    def generate_result_plots(self,data,pred,truth,quantile,cs,time,sample_num,neptune_run=None):
         """
         Plotting the prediction performance of the model.
         Saves the plots to save_path and logs them to neptune if needed.
         """
         sample_mid = data.shape[0] // 2
-        
-        data = data[sample_mid:sample_mid+self.sample_size].detach().cpu().numpy()
-        pred = pred[sample_mid:sample_mid+self.sample_size].detach().cpu().numpy()
-        truth = truth[sample_mid:sample_mid+self.sample_size].detach().cpu().numpy()
-        quantile = quantile[sample_mid:sample_mid+self.sample_size].detach().cpu().numpy()
+        sample_start =0 # or sample-mid 
+        sample_idx = range(1)#np.arange(sample_start, sample_start + self.sample_size)
+        data = data.detach().cpu().numpy()
+        pred = pred.detach().cpu().numpy()
+        truth = truth.detach().cpu().numpy()
+        quantile = quantile.detach().cpu().numpy()
 
         data_denorm = self.normalizer.inverse_transform(data,"train")
         pred_denorm = self.normalizer.inverse_transform(pred,"target")
         truth_denorm = self.normalizer.inverse_transform(truth,"target")
 
         if cs is not None and self.params["target"] == "CSI":
-            cs = cs[:self.sample_size].detach().cpu().numpy()
-            pred_denorm = pred_denorm * cs
-            truth_denorm = truth_denorm * cs
+            # cs = cs[:self.sample_size].detach().cpu().numpy()
+            pred_denorm = pred_denorm * cs.detach().cpu().numpy()
+            truth_denorm = truth_denorm * cs.detach().cpu().numpy()
 
         # Plotting
         target_max = self.normalizer.max_target
          
-        for i in range(self.sample_size):
-            self._plot_results(data_denorm[i],pred_denorm[i],truth_denorm[i],quantile[i],time[i],target_max=target_max,sample_num=i,neptune_run=neptune_run)
+        for i in sample_idx:
+            self._plot_results(data_denorm[i],pred_denorm[i],truth_denorm[i],quantile[i],time[i],target_max=target_max,sample_num=sample_num,neptune_run=neptune_run)
 
-        return 0 
     
     def _plot_results(self,data,pred,truth,quantile,time,target_max,sample_num,neptune_run=None):
         x_idx = np.arange(0,len(data),1)

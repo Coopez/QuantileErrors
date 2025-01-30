@@ -24,7 +24,7 @@ if _LOG_NEPTUNE:
     from api_key import _NEPTUNE_API_TOKEN
     run = neptune.init_run(
         project="n1kl4s/QuantileError",
-        name = params['input_model']+"-"+ params['output_model'] +"-"+params["loss_option"][params['_LOSS']],
+        name = params['input_model']+"-"+ params['output_model'] +"-"+params["loss"],
         api_token=_NEPTUNE_API_TOKEN,
         tags= params["neptune_tags"]
     )

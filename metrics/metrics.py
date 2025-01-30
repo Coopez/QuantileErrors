@@ -86,8 +86,8 @@ def PINAW(pred, truth, intervals=[0.2, 0.5, 0.9], quantiles=None, return_counts=
         truth = truth.view(-1, truth.shape[-1])
         pred = pred.view(-1, pred.shape[-1])
 
-    range_samples = torch.max(truth)- torch.min(truth)
-
+    # range_samples = torch.max(truth)- torch.min(truth)
+    # min_samples = torch.min(truth)
     # if quantiles is not None: 
     assert len(quantiles) % 2 == 1
     quantiles = torch.sort(quantiles)[0]
@@ -116,9 +116,9 @@ def PINAW(pred, truth, intervals=[0.2, 0.5, 0.9], quantiles=None, return_counts=
                 avg_w = np.mean(np.abs(ci_u - ci_l))
             if return_counts: 
                 # _scores[np.round(interval_i.item(), 5)] = np.array([avg_w, num_samples])   # Include the sum of the truth for normalising... 
-                _scores[np.round(interval_i.item(), 5)] = torch.stack([avg_w, torch.tensor(range_samples).float()])
+                _scores[np.round(interval_i.item(), 5)] = torch.stack([avg_w, torch.tensor(1.0)]) # 1 instead of range_samples
             elif return_array:
-                _arrary_scores.append(avg_w.item() / range_samples.item())
+                _arrary_scores.append(avg_w.item() / 1.0) # instead of range_samples.item())
                 _items.append(np.round(interval_i.item(), 5))
             else: 
                 _scores[np.round(interval_i.item(), 5)] = avg_w.item() / range_samples.item()

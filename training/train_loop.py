@@ -7,7 +7,6 @@ from neptune.utils import stringify_unsupported
 from debug.model import print_model_parameters
 from debug.plot import Debug_model
 
-
 def train_model(params,
                 model,
                 optimizer,
@@ -81,24 +80,36 @@ def train_model(params,
         if epoch % params['valid_metrics_every'] == 0:
             metric_dict = params['metrics']
             metric_array_dict = params['array_metrics']
+            sample_counter = 1
             with torch.no_grad():
-                for batch in dataloader_valid:
+                for b_idx,batch in enumerate(dataloader_valid):
                     training_data, target,cs, idx = batch
-                    
+
                     # There is not reason not to already use a quantile range here, as we are not training
                 
                     quantile,q_range = data_valid.return_quantile(training_data.shape[0],quantile_dim=params["metrics_quantile_dim"])
 
                     output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
+                    if params['valid_clamp_output']:
+                        output = torch.clamp(output,min=0)
                     
                     metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range)
 
                     if epoch % params['valid_plots_every'] == 0:
                         metric_array_dict = metric_plots.accumulate_array_metrics(metric_array_dict,pred = output, truth = target, quantile = q_range) #q_range is just the quantiles in a range arrangement. 
+                        if b_idx in [122,128,136,131,184,124,278] and sample_counter != params["valid_plots_sample_size"]:
+                            metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[idx.detach().cpu().numpy()],sample_num = sample_counter, neptune_run=neptune_run)
+                            sample_counter += 1
 
             if epoch % params['valid_plots_every'] == 0:
                 metric_plots.generate_metric_plots(metric_array_dict,neptune_run=neptune_run, dataloader_length=len(dataloader_valid))
-                metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[idx.detach().cpu().numpy()], neptune_run=neptune_run)
+
+                
+
+                    
+                    
+                
+                # metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[idx.detach().cpu().numpy()], neptune_run=neptune_run)
             # if log_neptune:
             #     #log all metrics in metric_dict to neptune
             #     for key, value in metric_dict.items():
@@ -115,7 +126,7 @@ def train_model(params,
         step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time , "Train_Loss": np.mean(train_losses)}
         if params['loss']== 'calibration_sharpness_loss':
             step_meta["Sharpness"] = np.mean(sharp_losses)
-        metric.summarize_metrics({**step_meta, **metric_dict})
+        metric.summarize_metrics({**step_meta, **metric_dict},neptune = log_neptune,neptune_run=neptune_run)
 
     return model
 

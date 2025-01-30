@@ -3,6 +3,7 @@ import pandas as pd
 from pytorch_lattice.models.features import NumericalFeature
 from pytorch_lattice.enums import InputKeypointsInit,Monotonicity
 from typing import Optional
+import torch
 
 def generate_surrogate_quantiles(length: int, params: dict):
     #quantiles = np.random.uniform(0,1,length)
@@ -99,3 +100,15 @@ def return_Dataframe(data):
 #         self.input_keypoints = np.linspace(min_value, max_value, num=num_keypoints)
         
 
+def rank_batches_by_variance(dataloader: torch.utils.data.DataLoader):
+    batch_variances = []
+    
+    for i, batch in enumerate(dataloader):
+        training_data, target,cs, idx = batch
+
+        variance = torch.var(target)
+        batch_variances.append((i, variance.item()))
+    
+    ranked_batches = sorted(batch_variances, key=lambda x: x[1], reverse=True)
+    
+    return ranked_batches

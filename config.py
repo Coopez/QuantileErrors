@@ -1,7 +1,7 @@
 # Config for main.py
 
 _DATA_DESCRIPTION = "IFE Skycam"#"Station 11 Irradiance Sunpoint" # Description of the data set
-_LOG_NEPTUNE = False # determines if neptune is used
+_LOG_NEPTUNE = True # determines if neptune is used
 _VERBOSE = True # determines if printouts to console are made - should be False for ML cluster tasks
 
 
@@ -10,12 +10,12 @@ params = dict(
 
 debug = False, # Determines some debug outputs
 
-batch_size = 64, # Batchsize
+batch_size = 64, # Batchsize  #DONT FORGET THAT IF YOU CHANGE THIS YOU MAY NEED TO ADJUST PLOTBATCH
 random_seed = 0, # Random seed
 train_shuffle = True, # Determines if data is shuffled
-valid_shuffle = True, # Determines if data is shuffled
+valid_shuffle = False, # Determines if data is shuffled
 target = 'GHI', # or 'GHI' or 'ERLING_SETTINGS'
-learning_rate = 0.0001, #0.1, # Learning rate
+learning_rate = 0.001, #0.1, # Learning rate
 epochs = 10, # Number of epochs
 deterministic_optimization= False, # Determines if optimization is deterministic
 window_size = 60,#30,#24, # Lookback size
@@ -24,11 +24,11 @@ horizon_size = 90,#90,#12, # Horizon size
 
 # LSTM Hyperparameters
 lstm_input_size = 22,  # Number of features 246 if all stations of sunpoint are used or 11,22 for IFE
-lstm_hidden_size = [12,12], # LIST of number of nodes in hidden layers TODO will run into error if layers of different sizes. This is because hidden activation
+lstm_hidden_size = [64,64], # LIST of number of nodes in hidden layers TODO will run into error if layers of different sizes. This is because hidden activation
 lstm_num_layers = 2, # Number of layers
 
 dnn_input_size = 22,  # input will be that * window_size
-dnn_hidden_size = [12,24], # LIST of number of nodes in hidden layers
+dnn_hidden_size = [64,64], # LIST of number of nodes in hidden layers
 dnn_num_layers = 2, # Number of layers
 dnn_activation = 'relu', # Activation function
 # Lattice Hyperparameters
@@ -66,7 +66,7 @@ array_metrics = {"PICP": [],
 
 metrics_quantile_dim = 9, # can be 5, 9 for more accuracy, or 99 for full quantile range
 
-input_model = "dnn",
+input_model = "lstm",
 #options = "lstm", "dnn"
 output_model = "linear",
 #options = "lattice", "linear", "constrained_linear", "linear_lattice", "lattice_linear"
@@ -74,10 +74,11 @@ output_model = "linear",
 
 valid_metrics_every = 1, # Determines how often metrics are calculated depending on Epoch number
 valid_plots_every = 1, # Determines how often plots are calculated depending on Validation and epoch number
-valid_plots_sample_size = 4, # Sample size for plots
+valid_plots_sample_size = 3, # Sample size for plots
 valid_plots_save_path = "plots_save/", # Path for saving plots
+valid_clamp_output = True, # Determines if output is clamped to 0
 
-neptune_tags = [], # List of tags for neptune
+neptune_tags = ["IFE Skyimage","Training test"], # List of tags for neptune
 
 save_all_epochs = False, # Determines if all epochs are saved
 save_path_model_epoch = "models_save/" # Path for saving models
