@@ -22,7 +22,7 @@ class CalibratedDataset(torch.utils.data.Dataset):
         self.horizon_size = params['horizon_size']  
         self.window_size = params['window_size']   
         
-        self.embedded_size = params['lstm_hidden_size'][-1] if params['input_model'] == "lstm" else params['dnn_hidden_size'][-1]
+        # self.embedded_size = params['lstm_hidden_size'][-1] if params['input_model'] == "lstm" else params['dnn_hidden_size'][-1]
 
         # self.FLAG_pass_CS = True if data_source == "IFE Skycam" and params['_IFE_TARGET'] == "CSI" else False
 

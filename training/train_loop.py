@@ -20,7 +20,8 @@ def train_model(params,
                 log_neptune=False,
                 verbose=False, 
                 neptune_run=None,
-                overall_time = []):
+                overall_time = []
+                ):
     if params['debug']:
         print_model_parameters(model)
     if log_neptune:
@@ -32,6 +33,7 @@ def train_model(params,
     epochs = params['epochs']
     if params['deterministic_optimization']:
         epochs = 1
+    plot_ids = sorted(list(set([int(x * (64 / params["batch_size"])) for x in [122, 128, 136, 131, 184, 124, 278]])))
     for epoch in range(epochs):
         start_time = torch.cuda.Event(enable_timing=True)
         start_time.record()
@@ -81,6 +83,7 @@ def train_model(params,
             metric_dict = params['metrics']
             metric_array_dict = params['array_metrics']
             sample_counter = 1
+            
             with torch.no_grad():
                 for b_idx,batch in enumerate(dataloader_valid):
                     training_data, target,cs, idx = batch
@@ -97,7 +100,7 @@ def train_model(params,
 
                     if epoch % params['valid_plots_every'] == 0:
                         metric_array_dict = metric_plots.accumulate_array_metrics(metric_array_dict,pred = output, truth = target, quantile = q_range) #q_range is just the quantiles in a range arrangement. 
-                        if b_idx in [122,128,136,131,184,124,278] and sample_counter != params["valid_plots_sample_size"]:
+                        if b_idx in plot_ids and sample_counter != params["valid_plots_sample_size"]:
                             metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[idx.detach().cpu().numpy()],sample_num = sample_counter, neptune_run=neptune_run)
                             sample_counter += 1
 
@@ -123,7 +126,7 @@ def train_model(params,
         end_time.record()
         torch.cuda.synchronize() 
         epoch_time = start_time.elapsed_time(end_time)/ 1000 # is in ms. Need to convert to seconds
-        step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time , "Train_Loss": np.mean(train_losses)}
+        step_meta = {"Epoch": f"{epoch+1:02d}/{epochs}", "Time": epoch_time, "Train_Loss": np.mean(train_losses)}
         if params['loss']== 'calibration_sharpness_loss':
             step_meta["Sharpness"] = np.mean(sharp_losses)
         metric.summarize_metrics({**step_meta, **metric_dict},neptune = log_neptune,neptune_run=neptune_run)
@@ -135,11 +138,15 @@ def forward_pass(params:dict,
                  model: torch.nn.Module,
                  batch:torch.Tensor, 
                  quantile: torch.Tensor,
-                 quantile_dim:int):
+                 quantile_dim:int,
+                 device='cuda',):
     """
     Handels forward pass through model and does X amount of passes for different quantiles."""
     
     assert quantile_dim == quantile.shape[-1], 'Quantile dimension must match quantile tensor'
+    if params['dataloader_device'] == 'cpu':
+        batch = batch.to(device)
+        quantile = quantile.to(device)
 
     output = torch.zeros((batch.size()[0],params['horizon_size'],quantile_dim))
     model.train()

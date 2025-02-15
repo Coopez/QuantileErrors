@@ -9,3 +9,5 @@ api_key.py
 *.pt
 *.png
 *.jpg
+*.db
+

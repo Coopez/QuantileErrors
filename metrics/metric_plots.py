@@ -9,7 +9,7 @@ import pandas as pd
 
 
 class MetricPlots:
-    def __init__(self, params, normalizer, sample_size=1, log_neptune=False):
+    def __init__(self, params, normalizer, sample_size=1, log_neptune=False,trial_num = 1):
         self.params = params
         self.sample_size = sample_size
         self.log_neptune = log_neptune
@@ -17,6 +17,7 @@ class MetricPlots:
         self.metrics = params['array_metrics']
         self.normalizer = normalizer
         self.range_dict = {"PICP": None, "PINAW": None, "Cali_PICP": None}
+        self.trial_num = trial_num
         seaborn_style = "whitegrid"
         sns.set_theme(style=seaborn_style, palette="colorblind")
     def accumulate_array_metrics(self,metrics,pred,truth,quantile):
@@ -135,5 +136,5 @@ class MetricPlots:
         plt_fig = plt.gcf()  # Get the current figure
 
         if neptune_run is not None:
-            neptune_run[f"valid/distribution_{sample_num}"].append(plt_fig)
+            neptune_run[f"valid/distribution_trial{self.trial_num}_{sample_num}"].append(plt_fig)
         plt.close()
