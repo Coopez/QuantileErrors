@@ -23,9 +23,11 @@ def preprocess_ife_data(params:dict):
     return 
 
 
-def import_ife_data(params:dict, dtype = "float32"):
+def import_ife_data(params:dict, dtype = "float32",base_path = None):
     # Load data
-    trainval_df = pd.read_pickle('IFE_dataset_model/trainval_df_preprocessed.pkl')
+    standard_path = 'IFE_dataset_model/trainval_df_preprocessed.pkl'
+    path = standard_path if base_path is None else os.path.join(base_path, standard_path)
+    trainval_df = pd.read_pickle(path)
     if params["target"] == 'CSI':
         trainval_df = trainval_df.iloc[:,[-1,7, 0, 1, 2, 3, 4, 5, 6, 10, 11, 12,13,14,15,16,17,18,19,20,21,22]] # features to use - 8 and 9 are out
     elif params['target'] == 'GHI':

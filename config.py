@@ -91,6 +91,12 @@ hpo_window_size = [60,90,120], # Hyperparameter optimization search space for wi
 hpo_hidden_size = [16,32,64,128,256,516], # Hyperparameter optimization search space for hidden size
 hpo_num_layers = [1, 2, 3], # Hyperparameter optimization search space for number of layers
 
+fox_valid_plots_save_path = " ", # Path for saving plots on fox
+fox_save_path_model_epoch = " ", # Path for saving models on fox
+
+fox_code_dir = " ", # Path for code directory on fox
+fox_data_dir = " ", # Path for data directory on fox
+fox_neptune_dir = " ", # Path for neptune directory on fox
 )
 
 # Check for parameter consistency

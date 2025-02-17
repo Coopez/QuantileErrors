@@ -1,7 +1,6 @@
 import torch
-import torch.nn as nn
 import numpy as np
-
+import os
 # Define a data set
 class SimpleDataset(torch.utils.data.Dataset):
     def __init__(self, window, horizon, data=None, targets=None):
@@ -66,9 +65,14 @@ class MinMaxScaler():
         return  y
 
 
-def data_import():
+def data_import(base_path = None):
     filename = "readyDat_time_csi_nights_allseason_nora_cam"
-    data = np.load("res/"+filename+ ".npz")
+    load_path = "res/"+filename+ ".npz" 
+    if base_path is not None:
+        path = os.path.join(base_path, load_path)
+    else:
+        path = load_path
+    data = np.load(path)
     return data['flat_train'], data['target_train'], data['flat_valid'] ,data['target_valid'], data['flat_test'], data['target_test']
 
 
