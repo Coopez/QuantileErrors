@@ -7,7 +7,6 @@ from metrics.metric_plots import MetricPlots
 from res.data import data_import, Data_Normalizer
 from res.ife_data import import_ife_data 
 from dataloader.calibratedDataset import CalibratedDataset
-from pytorch_lattice.models.features import NumericalFeature
 
 from losses.qr_loss import SQR_loss
 
@@ -17,7 +16,6 @@ from models.builder import build_model, build_optimizer
 from training.train_loop import train_model
 
 import optuna
-from optuna.artifacts import FileSystemArtifactStore
 import logging
 import sys
 import os
@@ -30,17 +28,17 @@ import neptune.integrations.optuna as optuna_utils
 CHECKPOINT_DIR = "optuna_checkpoint"
 
 
-BASE_PATH = os.path.join(os.environ['SLURM_SUBMIT_DIR'],
-			    os.environ['SLURM_JOB_ID'])
+BASE_PATH = os.environ['SLURM_SUBMIT_DIR']
 os.makedirs(BASE_PATH, exist_ok=True)
 
-RUN_NAME = "HPO_LSTM_LINEAR-4" 
+RUN_NAME = "HPO_DNN_LINEAR-4" 
 
 """
 We already had:
 LSTM_LINEAR-1 - first LSTM run
 LSTM_LINEAR-2
 LSTM_LINEAR-3 - fixed pruning
+LSTM_LINEAR-4 - full run with local
 
 DNN_LINEAR-1
 DNN_LINEAR-2 - first DNN run
@@ -266,7 +264,7 @@ def train_model(params,
 
         # print(f"Saving a checkpoint in epoch {epoch}.")
         model_save_path = f"./tmp/tmp_model_{trial.number}.pt"
-        temp_path = os.join(BASE_PATH, model_save_path)
+        temp_path = os.path.join(BASE_PATH, model_save_path)
         torch.save(
             {
                 "epoch": epoch,
@@ -322,7 +320,7 @@ if __name__ == "__main__":
     run = neptune.init_run(
         project="n1kl4s/QuantileError",
         custom_run_id=RUN_NAME,
-        name = "HPO",
+        name = "HPO_FOX",
         api_token=_NEPTUNE_API_TOKEN,
         tags= params["neptune_tags"]
     )
