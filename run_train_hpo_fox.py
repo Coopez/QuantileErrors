@@ -31,7 +31,7 @@ CHECKPOINT_DIR = "optuna_checkpoint"
 BASE_PATH = os.environ['SLURM_SUBMIT_DIR']
 os.makedirs(BASE_PATH, exist_ok=True)
 
-RUN_NAME = "HPO_DNN_LINEAR-4" 
+RUN_NAME = "HPO_LSTM_CONST_LINEAR-2" 
 
 """
 We already had:
@@ -39,10 +39,19 @@ LSTM_LINEAR-1 - first LSTM run
 LSTM_LINEAR-2
 LSTM_LINEAR-3 - fixed pruning
 LSTM_LINEAR-4 - full run with local
+LSTM_LINEAR-5 - full run fox, without min, with pruning.
+
+LSTM_CONST_LINEAR-1
+LSTM_CONST_LINEAR-2 - full run fox, without min, with pruning.
 
 DNN_LINEAR-1
 DNN_LINEAR-2 - first DNN run
 DNN_LINEAR-3 - 
+DNN_LINEAR-4 - 
+DNN_LINEAR-5 - full run fox, without min, with pruning.
+
+DNN_CONST_LINEAR-1
+DNN_CONST_LINEAR-2 - full run fox, without min, with pruning.
 
 """
 
@@ -259,7 +268,8 @@ def train_model(params,
         # run["status/epoch_time"] = epoch_time
         # run["status/epoch"] = epoch
 
-        min_loss = report_metrics["optuna_loss"] if report_metrics["optuna_loss"] < min_loss else min_loss
+        # min_loss = report_metrics["optuna_loss"] if report_metrics["optuna_loss"] < min_loss else min_loss
+        min_loss = report_metrics["optuna_loss"]
         run[f"trials/{trial.number}/best_value"] = report_metrics["optuna_loss"]
 
         # print(f"Saving a checkpoint in epoch {epoch}.")
@@ -278,7 +288,7 @@ def train_model(params,
         if trial.should_prune():
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            return min_loss
+            #return min_loss
             raise optuna.exceptions.TrialPruned()
     
     if os.path.exists(temp_path):
@@ -346,18 +356,18 @@ if __name__ == "__main__":
     # if study.trials == []:
         # Encuing some trials to get a better starting point
 
-    if len(study.trials) != 0 and (study.trials[-1].state == 0  or study.trials[-1].state == 3):
-        last_trial = study.trials[-1]
+    # if len(study.trials) != 0 and (study.trials[-1].state == 0  or study.trials[-1].state == 3):
+    #     last_trial = study.trials[-1]
         
-        if last_trial.user_attrs != {}:
-            idx = last_trial.user_attrs["last_checkpoint"] 
-            print("RESTORATOR: Detected past checkpoint.")
-        else:
-            idx = last_trial.number
-        study.enqueue_trial(study.trials[-1].params,user_attrs={"last_checkpoint":idx})
-        print("RESTORATOR: Continuing unfinished trial.")
-        study.optimize(objective, n_trials=1,callbacks=[neptune_callback])
-    study.optimize(objective, n_trials=225,callbacks=[neptune_callback],show_progress_bar=False)
+    #     if last_trial.user_attrs != {}:
+    #         idx = last_trial.user_attrs["last_checkpoint"] 
+    #         print("RESTORATOR: Detected past checkpoint.")
+    #     else:
+    #         idx = last_trial.number
+    #     study.enqueue_trial(study.trials[-1].params,user_attrs={"last_checkpoint":idx})
+    #     print("RESTORATOR: Continuing unfinished trial.")
+    #     study.optimize(objective, n_trials=1,callbacks=[neptune_callback])
+    study.optimize(objective, n_trials=400,callbacks=[neptune_callback],show_progress_bar=False)
 
     run.stop()
 

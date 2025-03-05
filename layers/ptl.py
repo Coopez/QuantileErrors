@@ -15,42 +15,14 @@ from pytorch_lattice.enums import Interpolation, LatticeInit, Monotonicity
 from .lattice import Lattice
 
 
-class RTL(ConstrainedModule):
-    """A module that efficiently implements Random Tiny Lattices.
-
-    This module creates an ensemble of lattices where each lattice in the ensemble takes
-    as input a subset of the input features. For further efficiency, input subsets with
-    the same constraint structure all go through the same lattice as multiple units in
-    parallel. When creating the ensemble structure, features are shuffled and uniformly
-    repeated if there are more available slots in the ensemble structure than there are
-    features.
-
-    Attributes:
-      - All `__init__` arguments.
-
-    Example:
-    ```python
-    inputs=torch.tensor(...)  # shape: (batch_size, D)
-    monotonicities = List[Monotonicity...]  # len: D
-    random_tiny_lattices = RTL(
-      monotonicities,
-      num_lattices=5
-      lattice_rank=3,  # num_lattices * lattice_rank must be greater than D
-    )
-    output1 = random_tiny_lattices(inputs)
-
-    # You can stack RTL modules based on the previous RTL's output monotonicities.
-    rtl2 = RTL(random_tiny_lattices.output_monotonicities(), ...)
-    outputs2 = rtl2(outputs)
-    ```
-    """
-
+class PTL(ConstrainedModule):
+    """ Non Random Tiny lattices"""
     def __init__(
         self,
         monotonicities: list[Monotonicity],
         num_lattices: int,
-        lattice_rank: int,
-        lattice_size: int = 2,
+        lattice_rank: int, #input
+        lattice_size: int = 2, #keypoint
         output_min: Optional[float] = None,
         output_max: Optional[float] = None,
         kernel_init: LatticeInit = LatticeInit.LINEAR,
@@ -59,30 +31,11 @@ class RTL(ConstrainedModule):
         average_outputs: bool = False,
         random_seed: int = 42,
     ) -> None:
-        """Initializes an instance of 'RTL'.
-
-        Args:
-            monotonicities: List of `Monotonicity.INCREASING` or `None`
-              indicating monotonicities of input features, ordered respectively.
-            num_lattices: number of lattices in RTL structure.
-            lattice_rank: number of inputs for each lattice in RTL structure.
-            output_min: Minimum output of each lattice in RTL.
-            output_max: Maximum output of each lattice in RTL.
-            kernel_init: Initialization scheme to use for lattices.
-            clip_inputs: Whether input should be clipped to the range of each lattice.
-            interpolation: Interpolation scheme for each lattice in RTL.
-            average_outputs: Whether to average the outputs of every lattice RTL.
-            random_seed: seed used for shuffling.
-
-        Raises:
-            ValueError: If size of RTL, determined by `num_lattices * lattice_rank`, is
-             too small to support the number of input features.
-        """
         super().__init__()
 
         if len(monotonicities) > num_lattices * lattice_rank:
             raise ValueError(
-                f"RTL with {num_lattices}x{lattice_rank}D structure cannot support "
+                f"PTL with {num_lattices}x{lattice_rank}D structure cannot support "
                 + f"{len(monotonicities)} input features."
             )
         self.monotonicities = monotonicities
@@ -100,8 +53,8 @@ class RTL(ConstrainedModule):
         rtl_indices = np.array(
             [i % len(self.monotonicities) for i in range(num_lattices * lattice_rank)]
         )
-        np.random.seed(self.random_seed)
-        np.random.shuffle(rtl_indices)
+        # np.random.seed(self.random_seed)
+        # np.random.shuffle(rtl_indices)
         split_rtl_indices = [list(arr) for arr in np.split(rtl_indices, num_lattices)]
         swapped_rtl_indices = self._ensure_unique_sublattices(split_rtl_indices)
         monotonicity_groupings = {}
@@ -139,7 +92,7 @@ class RTL(ConstrainedModule):
                     interpolation=self.interpolation,
                     units=len(groups),
                 ))
-            self._lattice_index_map[str(monotonic_count)] = groups    
+            self._lattice_index_map[monotonic_count] = groups    
 
         self._lattice_layers =  torch.nn.ModuleDict(self._lattice_layers) # make it a module dict, so maybe layers are registered correctly
 
@@ -157,9 +110,9 @@ class RTL(ConstrainedModule):
         """
         forward_results = []
         
-        for idx,lattice in sorted(self._lattice_layers.items()):  
+        for idx in range(len(self._lattice_layers)):#sorted(self._lattice_layers.items()):  
             group = self._lattice_index_map[idx]
-            #lattice = self._lattice_layers[str(idx)]
+            lattice = self._lattice_layers[str(idx)]
             if len(group) > 1:
                 lattice_input = torch.stack([x[:, idx] for idx in group], dim=-2)
             else:

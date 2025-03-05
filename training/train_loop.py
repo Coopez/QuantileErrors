@@ -43,19 +43,12 @@ def train_model(params,
         model.train()
         for batch in dataloader:
             training_data, target, cs, _ = batch
-             # 2 quantiles because sharpness loss is logged
-            if params['deterministic_optimization']:
-                def closure():
-                    optimizer.zero_grad()
-                    quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
-                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],mode='train')
-                    loss = criterion(output, target, quantile.unsqueeze(-1))
-                    #loss.backward()
-                    return loss
-                optimizer.step(closure)
-            else:
+            
+            # 2 quantiles because sharpness loss is logged
+            quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
+            #### Normal Case
+            if params['output_model'] != 'lattice' or params['output_model'] != 'linear_lattice':
                 
-                quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
                 output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
                 # Compute loss
                 loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
@@ -66,14 +59,38 @@ def train_model(params,
                 optimizer.step()
                 train_losses.append(loss.item())
 
-                with torch.no_grad():
-                    sharpness = sharpness_loss(output,quantile,scale_sharpness_scale=params['loss_calibration_scale_sharpness'])
-                    sharp_losses.append(sharpness.item())
-                if log_neptune:
-                    run['train/'+params['loss']].log(np.mean(train_losses))
-                    if params['loss'] == 'calibration_sharpness_loss':
-                        run['train/sharpness'].log(np.mean(sharp_losses))
-        
+            #### Lattice Case
+            else:
+                # Freeze input model initially to train lattice columns individually
+                freeze_Model(model[0])
+                lattice_loss = []
+                output = torch.zeros((training_data.size()[0],params['horizon_size'],quantile.shape[-1]))
+                for i in range(params["horizon_size"]):
+                    optimizer.zero_grad()
+                    # the output is only one of the 90 horizon outputs.
+                    single_output = lattice_forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],horizon=i)
+                    output[:,i,:] = single_output
+                    loss = criterion(single_output, target[:,i,:], quantile)
+                    loss.backward()
+                    optimizer.step()
+                    lattice_loss.append(loss.item())
+                optimizer.zero_grad()
+                unfreeze_Model(model[0])
+                freeze_Model(model[1])
+                mean_loss = lattice_loss.mean()
+                mean_loss.backward()
+                optimizer.step()
+                unfreeze_Model(model[1])
+                train_losses.append(mean_loss.item())
+
+            with torch.no_grad():
+                sharpness = sharpness_loss(output,quantile,scale_sharpness_scale=params['loss_calibration_scale_sharpness'])
+                sharp_losses.append(sharpness.item())
+            if log_neptune:
+                run['train/'+params['loss']].log(np.mean(train_losses))
+                if params['loss'] == 'calibration_sharpness_loss':
+                    run['train/sharpness'].log(np.mean(sharp_losses))
+    
         epoch_path = params['save_path_model_epoch']
         save_model_per_epoch(run_name, model, epoch_path, epoch, save_all=params['save_all_epochs'])
 
@@ -168,3 +185,34 @@ def save_model_per_epoch(run_name, model: torch.nn.Module, path:str, epoch:int, 
 
 def generate_validation_plots(x,y):
     pass #TODO
+
+
+def freeze_Model(model: torch.nn.Module):
+    for param in model.parameters():
+        param.requires_grad = False
+def unfreeze_Model(model: torch.nn.Module):
+    for param in model.parameters():
+        param.requires_grad = True
+
+def lattice_forward_pass(params:dict,
+                 model: torch.nn.Module,
+                 batch:torch.Tensor, 
+                 quantile: torch.Tensor,
+                 quantile_dim:int,
+                 horizon: int,
+                 device='cuda'):
+    """
+    Handels forward pass through model and does X amount of passes for different quantiles."""
+    
+    assert quantile_dim == quantile.shape[-1], 'Quantile dimension must match quantile tensor'
+    if params['dataloader_device'] == 'cpu':
+        batch = batch.to(device)
+        quantile = quantile.to(device)
+
+    output = torch.zeros((batch.size()[0],params['horizon_size'],quantile_dim))
+    model.train()
+    embedded = model[0](batch)
+    for i in range(quantile_dim):
+        aggregated_input = torch.cat([embedded,quantile[...,i]],dim=-1)
+        output[...,i] = model[1](aggregated_input,horizon)
+    return output

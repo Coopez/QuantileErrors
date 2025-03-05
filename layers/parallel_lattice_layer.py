@@ -19,7 +19,7 @@ from pytorch_lattice.utils.models import (
 )
 from pytorch_lattice.models.features import CategoricalFeature, NumericalFeature
 from layers.rtl import RTL
-#from pytorch_lattice.layers import RTL
+
 
 import numpy as np
 import pandas as pd
@@ -28,7 +28,7 @@ from layers.calibrated_linear import Linear
 
 from utils.calibrator import NumericalCalibrator
 
-class CalibratedLatticeLayer(ConstrainedModule):
+class Parallel_lattice_layer(ConstrainedModule):
     """PyTorch Calibrated Lattice Model.
 
     Creates a `torch.nn.Module` representing a calibrated lattice model, which will be
@@ -133,12 +133,7 @@ class CalibratedLatticeLayer(ConstrainedModule):
                     kernel_init=NumericalCalibratorInit.EQUAL_HEIGHTS,
                 )
             self.output_calibrator = torch.nn.ModuleDict(output_calibrators)
-        # self.output_calibrator = initialize_output_calibrator(
-        #     output_calibration_num_keypoints=output_calibration_num_keypoints,
-        #     monotonic=not all(m is None for m in self.monotonicities),
-        #     output_min=output_min,
-        #     output_max=output_max,
-        # )
+
         if self.output_size is not None:
             self.layer_output = Linear(num_lattice, self.output_size, self.output_monotonicties)
 

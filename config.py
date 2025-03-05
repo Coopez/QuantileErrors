@@ -17,7 +17,7 @@ valid_shuffle = False, # Determines if data is shuffled
 dataloader_device = 'cpu', # determines if data is loaded on cpu or gpu
 target = 'GHI', # or 'GHI' or 'ERLING_SETTINGS'
 learning_rate = 0.0001, #0.1, # Learning rate
-epochs = 350, # Number of epochs
+epochs = 400, # Number of epochs
 deterministic_optimization= False, # Determines if optimization is deterministic
 window_size = 60,#30,#24, # Lookback size
 horizon_size = 90,#90,#12, # Horizon size
@@ -34,9 +34,9 @@ dnn_num_layers = 2, # Number of layers
 dnn_activation = 'relu', # Activation function
 # Lattice Hyperparameters
 lattice_num_layers = 1, # Number of layers
-lattice_num_per_layer = [1], # LIST
-lattice_dim_input = [13], # List of input dims of lattices per layer
-lattice_num_keypoints = 2, # Number of keypoints
+# lattice_num_per_layer = [28], # LIST
+lattice_dim_input = 3, # input dim per lattice
+lattice_num_keypoints = 5, # Number of keypoints
 lattice_calibration_num_keypoints = 5, # Number of keypoints in calibration layer
 lattice_donwsampled_dim = 13, # Dimension of downsampled input when using linear_lattice
 
@@ -67,9 +67,9 @@ array_metrics = {"PICP": [],
 
 metrics_quantile_dim = 9, # can be 5, 9 for more accuracy, or 99 for full quantile range
 
-input_model = "dnn",
+input_model = "lstm",
 #options = "lstm", "dnn"
-output_model = "linear",
+output_model = "constrained_linear",
 #options = "lattice", "linear", "constrained_linear", "linear_lattice", "lattice_linear"
 
 
@@ -85,9 +85,9 @@ save_all_epochs = False, # Determines if all epochs are saved
 save_path_model_epoch = "models_save/", # Path for saving models
 
 
-hpo_lr = [0.000001,0.00001,0.0001, 0.001, 0.01], # Hyperparameter optimization search space for learning rate
+hpo_lr = [0.000001,0.00001,0.0001], # Hyperparameter optimization search space for learning rate
 #hpo_batch_size = [64,256,1024], # Hyperparameter optimization search space for batch size
-hpo_window_size = [60,90,120], # Hyperparameter optimization search space for window size
+hpo_window_size = [60,90,120,180], # Hyperparameter optimization search space for window size
 hpo_hidden_size = [16,32,64,128,256,516], # Hyperparameter optimization search space for hidden size
 hpo_num_layers = [1, 2, 3], # Hyperparameter optimization search space for number of layers
 
@@ -95,6 +95,6 @@ hpo_num_layers = [1, 2, 3], # Hyperparameter optimization search space for numbe
 
 # Check for parameter consistency
 assert len(params['lstm_hidden_size']) == params['lstm_num_layers'], "Number of hidden layers must match number of hidden sizes"
-assert len(params['lattice_num_per_layer']) == params['lattice_num_layers'], "Number of lattice layers must match number of lattice sizes"
-assert len(params['lattice_dim_input']) == params['lattice_num_layers'], "Number of lattice layers must match number of input dimensions"
+#assert len(params['lattice_num_per_layer']) == params['lattice_num_layers'], "Number of lattice layers must match number of lattice sizes"
+#assert len(params['lattice_dim_input']) == params['lattice_num_layers'], "Number of lattice layers must match number of input dimensions"
 
