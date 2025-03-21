@@ -24,6 +24,8 @@ from losses.qr_loss import sharpness_loss
 import numpy as np
 from neptune.utils import stringify_unsupported
 import neptune.integrations.optuna as optuna_utils
+from models.persistence_model import Persistence_Model
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 CHECKPOINT_DIR = "optuna_checkpoint"
 
@@ -31,7 +33,7 @@ CHECKPOINT_DIR = "optuna_checkpoint"
 BASE_PATH = os.environ['SLURM_SUBMIT_DIR']
 os.makedirs(BASE_PATH, exist_ok=True)
 
-RUN_NAME = "HPO_LSTM_CONST_LINEAR-2" 
+RUN_NAME = "HPO_LSTM_DNN-1" 
 
 """
 We already had:
@@ -40,9 +42,17 @@ LSTM_LINEAR-2
 LSTM_LINEAR-3 - fixed pruning
 LSTM_LINEAR-4 - full run with local
 LSTM_LINEAR-5 - full run fox, without min, with pruning.
+LSTM_LINEAR-6 2nd test without tau scaling
+LSTM_LINEAR-7 new test run with injected smart_persistence
+LSTM_LINEAR-8  tau has been cut, now doing 1min scale
 
 LSTM_CONST_LINEAR-1
 LSTM_CONST_LINEAR-2 - full run fox, without min, with pruning.
+LSTM_CONST_LINEAR-3 - 1st new test run with injected smart_persistence
+LSTM_CONST_LINEAR-4 - 2nd test without tau scaling
+LSTM_CONST_LINEAR-5 - tau has been cut, now doing 1min scale
+
+LSTM_DNN-1 - first run with DNN_out and scheduler
 
 DNN_LINEAR-1
 DNN_LINEAR-2 - first DNN run
@@ -52,6 +62,7 @@ DNN_LINEAR-5 - full run fox, without min, with pruning.
 
 DNN_CONST_LINEAR-1
 DNN_CONST_LINEAR-2 - full run fox, without min, with pruning.
+
 
 """
 
@@ -131,6 +142,7 @@ def objective(trial):
     metric_plots = MetricPlots(params,Normalizer,sample_size=params["valid_plots_sample_size"],log_neptune=_LOG_NEPTUNE,trial_num=trial.number)
     optimizer = build_optimizer(params, model)
 
+    persistence = Persistence_Model(Normalizer,params)
     final_loss = train_model(params = params,
                     model = model,
                     optimizer = optimizer,
@@ -145,7 +157,8 @@ def objective(trial):
                     log_neptune=_LOG_NEPTUNE,
                     verbose=_VERBOSE, 
                     neptune_run=  run,
-                    overall_time = overall_time
+                    overall_time = overall_time,
+                    persistence = persistence
                     )
 
     return final_loss
@@ -175,13 +188,15 @@ def train_model(params,
                 log_neptune=False,
                 verbose=False, 
                 neptune_run=None,
-                overall_time = []
+                overall_time = [],
+                persistence = None
                 ):
 
     run = neptune_run 
     run["status/trial"] = trial.number
     device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
     last_checkpoint = trial.user_attrs.get("last_checkpoint", False)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.1)
     epoch_begin = 0
     if last_checkpoint:
         if os.path.exists(f"./tmp/tmp_model_{last_checkpoint}.pt"):
@@ -197,47 +212,43 @@ def train_model(params,
 
 
     epochs = params['epochs']
-    if params['deterministic_optimization']:
-        epochs = 1
-    plot_ids = sorted(list(set([int(x * (64 / params["batch_size"])) for x in [122, 128, 136, 131, 184, 124, 278]])))
+    plot_ids = sorted(list(set([int(x * (512 / params["batch_size"])) for x in [7,24,14,22,37,8,3]])))
+    #26,27,7,24,14,22,37,8,3,4,38 with 512
+    #old 122, 128, 136, 131, 184, 124, 278 with 64 
     min_loss = 1000.0
     for epoch in range(epoch_begin,epochs):
         model.train()
         for batch in dataloader:
-            training_data, target, cs, _ = batch
+            training_data, target, cs, time_idx = batch
              # 2 quantiles because sharpness loss is logged
             training_data, target,cs = training_data.to(device), target.to(device), cs.to(device)
-            if params['deterministic_optimization']:
-                def closure():
-                    optimizer.zero_grad()
-                    quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
-                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],mode='train')
-                    loss = criterion(output, target, quantile.unsqueeze(-1))
-                    #loss.backward()
-                    return loss
-                optimizer.step(closure)
+            if params["inject_persistence"]:
+                pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
             else:
-                
-                quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
-                quantile = quantile.to(device)
-                output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
-                # Compute loss
-                loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
+                pers = None    
+            quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
+            quantile = quantile.to(device)
 
-                #Backward pass and optimization
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                # train_losses.append(loss.item())
 
-                # with torch.no_grad():
-                #     sharpness = sharpness_loss(output,quantile,scale_sharpness_scale=params['loss_calibration_scale_sharpness'])
-                #     sharp_losses.append(sharpness.item())
-                # if log_neptune:
-                #     run['train/'+params['loss']].log(np.mean(train_losses))
-                #     if params['loss'] == 'calibration_sharpness_loss':
-                #         run['train/sharpness'].log(np.mean(sharp_losses))
-        
+
+            output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
+            # Compute loss
+            loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
+
+            #Backward pass and optimization
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            # train_losses.append(loss.item())
+
+            # with torch.no_grad():
+            #     sharpness = sharpness_loss(output,quantile,scale_sharpness_scale=params['loss_calibration_scale_sharpness'])
+            #     sharp_losses.append(sharpness.item())
+            # if log_neptune:
+            #     run['train/'+params['loss']].log(np.mean(train_losses))
+            #     if params['loss'] == 'calibration_sharpness_loss':
+            #         run['train/sharpness'].log(np.mean(sharp_losses))
+    
         model.eval()
         
         if epoch % params['valid_metrics_every'] == 0:
@@ -245,13 +256,16 @@ def train_model(params,
             sample_counter = 1
             with torch.no_grad():
                 for b_idx,batch in enumerate(dataloader_valid):
-                    training_data, target,cs, idx = batch
+                    training_data, target,cs, time_idx = batch
                     training_data, target,cs = training_data.to(device), target.to(device), cs.to(device)
                     # There is not reason not to already use a quantile range here, as we are not training
-                
+                    if params["inject_persistence"]:
+                        pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
+                    else:
+                        pers = None
                     quantile,q_range = data_valid.return_quantile(training_data.shape[0],quantile_dim=params["metrics_quantile_dim"])
                     quantile, q_range = quantile.to(device), q_range.to(device)
-                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
+                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
                     if params['valid_clamp_output']:
                         output = torch.clamp(output,min=0)
                     
@@ -259,11 +273,12 @@ def train_model(params,
                     if epoch == params['epochs'] - 1:
                         # metric_array_dict = metric_plots.accumulate_array_metrics(metric_array_dict,pred = output, truth = target, quantile = q_range) #q_range is just the quantiles in a range arrangement. 
                         if b_idx in plot_ids and sample_counter != params["valid_plots_sample_size"]:
-                            metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[idx.detach().cpu().numpy()],sample_num = sample_counter, neptune_run=neptune_run)
+                            metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[time_idx.detach().cpu().numpy()],sample_num = sample_counter, neptune_run=neptune_run)
                             sample_counter += 1
 
 
         report_metrics = return_loss(metric_dict)
+        scheduler.step(report_metrics["ACE"])
         trial.report(report_metrics["optuna_loss"],epoch)
         # run["status/epoch_time"] = epoch_time
         # run["status/epoch"] = epoch
@@ -303,12 +318,15 @@ def forward_pass(params:dict,
                  batch:torch.Tensor, 
                  quantile: torch.Tensor,
                  quantile_dim:int,
+                 persistence = None,
                  device='cuda',):
     """
     Handels forward pass through model and does X amount of passes for different quantiles."""
     
     assert quantile_dim == quantile.shape[-1], 'Quantile dimension must match quantile tensor'
-
+    if params['dataloader_device'] == 'cpu':
+        batch = batch.to(device)
+        quantile = quantile.to(device)
     output = torch.zeros((batch.size()[0],params['horizon_size'],quantile_dim))
     model.train()
     embedded = model[0](batch)
@@ -316,6 +334,8 @@ def forward_pass(params:dict,
     for i in range(quantile_dim):
         aggregated_input = torch.cat([embedded,quantile[...,i]],dim=-1)
         output[...,i] = model[1](aggregated_input)
+        if persistence is not None:
+            output[...,i] = model[2](x = output[...,i],c = persistence.squeeze(),tau = quantile[0,0,i])
     return output
 
 

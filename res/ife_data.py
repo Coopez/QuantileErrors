@@ -21,7 +21,10 @@ def preprocess_ife_data(params:dict):
     pd.to_pickle(result,'IFE_dataset_model/trainval_df_preprocessed.pkl')
     print('Data preprocessed and saved to IFE_dataset_model/trainval_df_preprocessed.pkl')
     return 
-
+# def summarize_target(data:pd.DataFrame, factor = 6):
+#     target = data.iloc[:,0] # assuming that the target is the first column
+#     target = target.rolling(window=factor, min_periods=1).mean()
+#     return target
 
 def import_ife_data(params:dict, dtype = "float32",base_path = None):
     # Load data
@@ -37,17 +40,22 @@ def import_ife_data(params:dict, dtype = "float32",base_path = None):
     else:
         raise NotImplementedError
     index_trainval = pd.read_pickle('IFE_dataset_model/trainval_C_index.pkl')
+    # target = summarize_target(trainval_df,params["target_summary"])
     # Split data
     if dtype == "float32":
         trainval_df = trainval_df.astype(np.float32)
-    split = 0.74 #0.78  TODO find out why 0.78 returns the wrong day.
-    train_data = trainval_df.iloc[:int(len(index_trainval)*split)]
-    val_data = trainval_df.iloc[int(len(index_trainval)*(split)):]
+    split = 0.78 #0.78 0.74  TODO find out why 0.78 returns the wrong day.
+    train_index = index_trainval[:int(len(index_trainval)*split)]
+    val_index = index_trainval[int(len(index_trainval)*(split)):]
+    # train_data = trainval_df.iloc[:int(len(index_trainval)*split)]
+    # val_data = trainval_df.iloc[int(len(index_trainval)*(split)):]
+    train_data = trainval_df.loc[train_index]
+    val_data = trainval_df.loc[val_index]
 
-    idx = list(range(len(trainval_df.index)))
+    # idx = list(range(len(trainval_df.index)))
 
-    train_idx = idx[:int(len(index_trainval)*split)]
-    val_idx = idx[int(len(index_trainval)*(split)):]
+    # train_idx = idx[:int(len(index_trainval)*split)]
+    # val_idx = idx[int(len(index_trainval)*(split)):]
     # train_idx = train_data.index.tolist()  # Indices of train_data
     # val_idx = val_data.index.tolist()  
         # Indices of val_data
@@ -59,7 +67,7 @@ def import_ife_data(params:dict, dtype = "float32",base_path = None):
         val_target = val_data['GHI']
     cs_train = train_data["GHI_clear"]
     cs_val = val_data["GHI_clear"]
-    return train_data, train_target, val_data, val_target, cs_train, cs_val, trainval_df.index, train_idx, val_idx 
+    return train_data, train_target, val_data, val_target, cs_train, cs_val, index_trainval,train_index.index, val_index.index 
 
 
 

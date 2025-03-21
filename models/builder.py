@@ -5,7 +5,8 @@ from .DNN import DNN
 from .constrained_linear import Constrained_Linear
 from .Calibrated_lattice_model import CalibratedLatticeModel
 from .Parallel_lattice_model import ParallelLatticeModel
-
+from .DNN_out_model import Neural_Net_with_Quantile
+import torch.nn as nn
 
 def build_model(params, device, features=None) -> Sequential:
     
@@ -36,6 +37,9 @@ def build_model(params, device, features=None) -> Sequential:
         output_model = Constrained_Linear(input_dim= data_output_size+1,
                                        output_dim= params["horizon_size"],
                                        quantile_idx= -1) # assuming quantile is the last feature
+    elif params["output_model"] == "dnn":
+        output_model = Neural_Net_with_Quantile(input_size= data_output_size+1,
+                                       output_size= params["horizon_size"])
     elif params["output_model"] == "linear_lattice" or params["output_model"] == "lattice_linear" or params["output_model"] == "lattice":
         assert features is not None, "Features must be provided for lattice model"
         # output_model = CalibratedLatticeModel( features= features,
@@ -66,10 +70,12 @@ def build_model(params, device, features=None) -> Sequential:
     else:
         raise ValueError("Output_Model not implemented")
  
-
+    output_injection = Output_injector(params["horizon_size"]+data_output_size)
     model = torch.nn.ModuleList( 
         [input_model,
-        output_model]
+        output_model,
+        output_injection
+        ]
     ) # was sequential, but I want to be able to run output model x times for different quantiles
     return model
 
@@ -83,3 +89,17 @@ def build_optimizer(params,model):
         optimizer_class = getattr(torch.optim, params['optimizer'])
         optimizer = optimizer_class(model.parameters(), lr=params['learning_rate'])
     return optimizer
+
+class Output_injector(nn.Module):
+    def __init__(self,  input_size,start_value=1.0):
+        super(Output_injector, self).__init__()
+
+        # self.layer = nn.Linear(input_size+1,1)
+        # self.layer.bias.data.fill_(0.0)
+        # self.activation = nn.Tanh()
+        self.parameter = nn.parameter.Parameter(torch.tensor(start_value))
+    def forward(self,x_input, x,c,tau=1.0):
+        # gate_input = torch.cat([x.clone(),x_input],dim=-1)
+        # gate = self.activation(self.layer(gate_input)) + 1.0
+        gate = self.parameter
+        return x + (gate *c)

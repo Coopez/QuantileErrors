@@ -232,7 +232,8 @@ def PICP(pred, truth, intervals=[0.1,0.25, 0.5, 0.75, 0.9], quantiles=None, retu
 
 @torch.no_grad()
 def ACE(picp):
-    ace = torch.mean(torch.stack([torch.abs(k - v) for k, v in picp.values()]))
+    # ace = torch.mean(torch.stack([torch.abs(k - v) for k, v in picp.values()]))
+    ace = torch.mean(torch.stack([torch.abs(label - (values[0]/values[1])) for label,values in picp.items()]))
     return ace
 
     
@@ -414,13 +415,13 @@ class Metrics():
 
         self.cs_multiplier = True if self.params["target"] == "CSI" else False
     @torch.no_grad()
-    def __call__(self, pred, truth,quantile,cs, metric_dict,q_range):
+    def __call__(self, pred, truth,quantile,cs, metric_dict,q_range,pers=None):
         results = metric_dict.copy()
         pred_denorm = self.normalizer.inverse_transform(pred,"target")
         truth_denorm = self.normalizer.inverse_transform(truth,"target")
         # we are approx crps with pinball so we do not need pinball loss
-        pred_denorm = pred_denorm *  cs if self.cs_multiplier else pred_denorm
-        truth_denorm = truth_denorm * cs if self.cs_multiplier else truth_denorm
+        # pred_denorm = pred_denorm *  cs if self.cs_multiplier else pred_denorm
+        # truth_denorm = truth_denorm * cs if self.cs_multiplier else truth_denorm
         median = pred_denorm[...,int(self.quantile_dim/2)].unsqueeze(-1)
         for metric in self.metrics:
             
@@ -445,17 +446,28 @@ class Metrics():
                 results['RSE'].append(RSE(median, truth_denorm).item())
             elif metric == 'CORR':
                 results['CORR'].append(CORR(median, truth_denorm).item()) 
-            elif metric == 'skill_score':
-                pass
+            elif metric == 'SS':
+                ss = Skill_score(truth = truth, y = pred[...,int(self.quantile_dim/2)].unsqueeze(-1), p = pers)
+                # if ss.evaluate().item() < -10:
+                #     print("SS:",ss.evaluate().item())
+                results['SS'].append(ss.evaluate().item())
+
+                # rmse_y = torch.sqrt(MSELoss()(median,truth_denorm))
+                # rmse_p = torch.sqrt(MSELoss()(pers,truth_denorm))
+                # results['SS'].append(Skill_score(rmse_y,rmse_p).item())
                 # assert input is not None, "Input (X) is required for skill score's persistence model"
                 # assert 'horizon' in options, "Horizon is required for skill score"
                 # assert 'lookback' in options, "Lookback is required for skill score"
                 # results['skill_score'] = Skill_score(options["horizon"],options["lookback"])(median, truth_denorm,input)
+            elif metric == "SS_filt":
+                ss = Skill_score(truth = truth,y = pred[...,int(self.quantile_dim/2)].unsqueeze(-1), p = pers)
+                cut_off = self.params["horizon_size"] // 15
+                results['SS_filt'].append(ss.evaluate_timestep_mean(exclude=cut_off).item())
             ###
             ### - Probabilistic metrics
             elif metric == 'ACE':
                 picp = PICP(pred, truth,quantiles=q_range)
-                results['ACE'].append((ACE(picp)/(self.batchsize*self.horizon)).item())    
+                results['ACE'].append((ACE(picp)).item())    #/(self.batchsize*self.horizon)
             elif metric == 'CRPS':
                 results['CRPS'].append(approx_crps(pred_denorm, truth_denorm,quantiles=quantile).item())
             elif metric == 'COV': # for coverage if wanted/relevant TODO
@@ -465,11 +477,13 @@ class Metrics():
         return results
     
     def summarize_metrics(self, results,verbose=True,neptune=False,neptune_run=None):
-        for metric, value in results.items():
+        scheduler_metrics = dict()
+        for metric, value in results.items():           
             if isinstance(value, (list, tuple, np.ndarray)):
-                value_str = np.mean(value)
+                value_str = np.mean(np.array(value))
             else:
                 value_str = value
+            scheduler_metrics[metric] = value_str
             if metric == "Time":
                 if verbose:
                     print(f"{value_str:.1f}s".ljust(8)+"-|", end=' ')
@@ -484,7 +498,7 @@ class Metrics():
                 if neptune:
                     neptune_run[f'valid/{metric}'].log(value_str)
         print(f" ")
-        return 0
+        return scheduler_metrics
     # def approx_cdf(self,input,model):
     #     quantiles = [0.05,0.125,0.25,0.375,0.45,0.5,0.55,0.625,0.75,0.875,0.95]
     #     cdf = []
@@ -502,33 +516,43 @@ class Metrics():
     #     cdf_denorm = self.normalizer.inverse_transform(cdf)
     #     return cdf,cdf_denorm, quantiles
     
-    
 
-def persistence(x):
-    return x[...,-1,0]
-
-    
-
+  
+# def Skill_score(rmse_y,rmse_p):
+#     return 1 - (rmse_y/rmse_p)
 
 class Skill_score():
-    @torch.no_grad()
-    def __init__(self,horizon,lookback):
-        self.horizon = horizon
-        self.lookback = lookback
-    @torch.no_grad()
-    def __call__(self, y_pred,y,x):
-        pers = persistence(x)
+    def __init__(self,truth,y,p):
+        mse = MSELoss()
+        self.epsilon = 1.0
+        self.truth = truth
+        self.y = y
+        self.p = p
+        self.rmse_y = torch.mean(((truth - y)**2)) + self.epsilon#torch.sqrt(mse(y,truth))
+        self.rmse_p = torch.mean(((truth - p)**2)) + self.epsilon#torch.sqrt(mse(p,truth))
+        # self.test_y = torch.mean(torch.sqrt(torch.mean(((truth - y)**2),dim=0)))
+        # self.test_p = torch.sqrt(torch.mean(torch.mean(((truth - p)**2),dim=0)))
+        self.rmse_timestep_y = torch.mean(((truth - y)**2),dim=0) +self.epsilon
+        self.rmse_timestep_p = torch.mean(((truth - p)**2),dim=0) +self.epsilon
+    def evaluate(self):
+        # if 1 - (self.rmse_y/self.rmse_p) < -10.0:
+        #     print("RMSE_y:",self.rmse_y)
+        #     print("RMSE_p:",self.rmse_p)
+        return 1 - (self.rmse_y/self.rmse_p)
+        # return torch.mean(1- (self.rmse_timestep_y/self.rmse_timestep_p))
+    
+    def evaluate_timestep_mean(self,exclude=0):
+        return torch.mean(1 - (self.rmse_timestep_y[exclude:]/self.rmse_timestep_p[exclude:]))
 
-        return 1 - (torch.sum((y - y_pred)**2)/torch.sum((y - pers.unsqueeze(-1))**2))
+    def evaluate_timestep(self,exclude=0):
         
-
-
+        return 1 - (self.rmse_timestep_y[exclude:]/self.rmse_timestep_p[exclude:])
 # Ramp score is no good.
 # class Ramp_score():
 #     @torch.no_grad()
 #     def __init__(self,res,LT,epsilon,delta_t,settings):
 #         self.res = res # time resolution
-#         self.LT = LT # Lead time - useless, becasue output will alrad ybe led in the future
+#         self.LT = LT # Lead time - useless, because output will alrad ybe led in the future
 #         self.epsilon = epsilon # threshold
 #         self.settings = settings # settings for the model
 #         self.delta_t = delta_t # tolerance window for the ramp event

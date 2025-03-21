@@ -18,6 +18,7 @@ from utils.helper_func import generate_surrogate_quantiles, return_features, ret
 from config import _LOG_NEPTUNE, _VERBOSE, params, _DATA_DESCRIPTION
 from models.builder import build_model, build_optimizer
 from training.train_loop import train_model
+from models.persistence_model import Persistence_Model
 
 def train():
 
@@ -34,7 +35,6 @@ def train():
         run['data/type'] = _DATA_DESCRIPTION
     else:
         run = None
-
 
     # pytorch random seed
     torch.manual_seed(params['random_seed'])
@@ -86,6 +86,7 @@ def train():
     metric_plots = MetricPlots(params,Normalizer,sample_size=params["valid_plots_sample_size"],log_neptune=_LOG_NEPTUNE)
     optimizer = build_optimizer(params, model)
 
+    persistence = Persistence_Model(Normalizer,params)
     model = train_model(params = params,
                     model = model,
                     optimizer = optimizer,
@@ -99,7 +100,8 @@ def train():
                     log_neptune=_LOG_NEPTUNE,
                     verbose=_VERBOSE, 
                     neptune_run=  run,
-                    overall_time = overall_time)
+                    overall_time = overall_time,
+                    persistence = persistence)
 
 
     if _LOG_NEPTUNE:

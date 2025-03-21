@@ -10,22 +10,23 @@ params = dict(
 
 debug = False, # Determines some debug outputs
 
-batch_size = 512, # Batchsize 
+batch_size = 256, # Batchsize 
 random_seed = 0, # Random seed
 train_shuffle = True, # Determines if data is shuffled
 valid_shuffle = False, # Determines if data is shuffled
 dataloader_device = 'cpu', # determines if data is loaded on cpu or gpu
 target = 'GHI', # or 'GHI' or 'ERLING_SETTINGS'
+target_summary = 1, # mean window, will not change anything if set to 1
 learning_rate = 0.0001, #0.1, # Learning rate
 epochs = 400, # Number of epochs
 deterministic_optimization= False, # Determines if optimization is deterministic
-window_size = 60,#30,#24, # Lookback size
+window_size = 90, # Lookback size
 horizon_size = 90,#90,#12, # Horizon size
 
-
+inject_persistence = True, # Determines if persistence model is injected
 # LSTM Hyperparameters
 lstm_input_size = 22,  # Number of features 246 if all stations of sunpoint are used or 11,22 for IFE
-lstm_hidden_size = [28,28], # LIST of number of nodes in hidden layers TODO will run into error if layers of different sizes. This is because hidden activation
+lstm_hidden_size = [32,32], # LIST of number of nodes in hidden layers TODO will run into error if layers of different sizes. This is because hidden activation
 lstm_num_layers = 2, # Number of layers
 
 dnn_input_size = 22,  # input will be that * window_size
@@ -55,27 +56,30 @@ optimizer = 'Adam', # dont try to rename. this is used to search for optimizer i
 metrics =  {"ACE": [], 
             "MAE": [], 
             "RMSE": [],
-            "CS_L": [],  # new abbreviation for Calibration Sharpness Loss or Beyond Loss
-            "CRPS": []}, 
+            #"CS_L": [],  # new abbreviation for Calibration Sharpness Loss or Beyond Loss
+            "CRPS": [],
+            "SS": [],
+            "SS_filt":[]}, 
             #TODO SkillScore
 array_metrics = {"PICP": [],
             "Cali_PICP": [],
-            "PINAW": [], 
-            }, # metrics which are in lists and thus not suitable for neptune logging. We will calculate them seperately and push them into the example plots
+            "PINAW": [],
+            "Correlation": [],
+            "SkillScore": []}, # metrics which are in lists and thus not suitable for neptune logging. We will calculate them seperately and push them into the example plots
 
 
 
-metrics_quantile_dim = 9, # can be 5, 9 for more accuracy, or 99 for full quantile range
+metrics_quantile_dim = 11, # can be 5, 9 for more accuracy, or 99 for full quantile range
 
 input_model = "lstm",
 #options = "lstm", "dnn"
-output_model = "constrained_linear",
-#options = "lattice", "linear", "constrained_linear", "linear_lattice", "lattice_linear"
+output_model = "dnn",
+#options = "lattice", "linear", "constrained_linear", "linear_lattice", "lattice_linear",  
 
 
 valid_metrics_every = 1, # Determines how often metrics are calculated depending on Epoch number
 valid_plots_every = 1, # Determines how often plots are calculated depending on Validation and epoch number
-valid_plots_sample_size = 5, # Sample size for plots - will run into error if larger than the batch size adjusted index list.
+valid_plots_sample_size = 7, # Sample size for plots - will run into error if larger than the batch size adjusted index list.
 valid_plots_save_path = "plots_save/", # Path for saving plots
 valid_clamp_output = True, # Determines if output is clamped to 0
 
@@ -88,7 +92,7 @@ save_path_model_epoch = "models_save/", # Path for saving models
 hpo_lr = [0.000001,0.00001,0.0001], # Hyperparameter optimization search space for learning rate
 #hpo_batch_size = [64,256,1024], # Hyperparameter optimization search space for batch size
 hpo_window_size = [60,90,120,180], # Hyperparameter optimization search space for window size
-hpo_hidden_size = [16,32,64,128,256,516], # Hyperparameter optimization search space for hidden size
+hpo_hidden_size = [8,16,32,64], # Hyperparameter optimization search space for hidden size
 hpo_num_layers = [1, 2, 3], # Hyperparameter optimization search space for number of layers
 
 )

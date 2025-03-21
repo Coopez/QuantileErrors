@@ -365,3 +365,40 @@ if __name__ == '__main__':
     no_1_smp_id = PVForecast(ghi_df['NO1'].copy().shift(periods=450, freq='1S'), binning='left',
                              f_h='60T', f_i='15T', s_h='60T', location=locations['NO1']).smart_persistance(
         model='ineichen')
+
+
+
+### own stuff
+import torch
+class Persistence_Model():
+    def __init__(self,normalizer,params):
+
+        self.data = pd.read_pickle('models/persistence.pkl')
+        self.min = normalizer.min_target
+        self.max = normalizer.max_target
+        self.data_normalized = (self.data-self.min)/(self.max-self.min)
+        self.params = params
+
+        self.target_summary = params["target_summary"]
+    
+    def forecast_raw(self,time):
+        
+        persistence = np.zeros((time.shape[0],self.params['horizon_size']))
+        for idx,instance in enumerate(time):
+            temp_pers =self.data.loc[instance].rolling(window=self.target_summary, min_periods=1).mean()[self.target_summary-1::self.target_summary]
+            persistence[idx] = temp_pers.values
+
+        return persistence#self.data.loc[time]
+    
+    def forecast(self,time):
+        persistence = np.zeros((time.shape[0],self.params['horizon_size']))
+        for idx,instance in enumerate(time):
+            temp_pers = self.data_normalized.loc[instance].rolling(window=self.target_summary, min_periods=1).mean()[self.target_summary-1::self.target_summary]
+            persistence[idx] = temp_pers.values
+        return persistence
+    
+    def evaluate(self,forecast,actual):
+        mae =  np.mean(np.abs(forecast-actual))
+        tau = 0.5
+        fake_pinball = np.mean(np.maximum(tau*(actual-forecast), (tau-1)*(actual-forecast)))
+        return mae,fake_pinball

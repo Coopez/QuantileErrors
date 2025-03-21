@@ -19,9 +19,12 @@ class CalibratedDataset(torch.utils.data.Dataset):
     ):
         Xc = X.copy()
         self.length = len(Xc)
-        self.horizon_size = params['horizon_size']  
+        self.updated_horizon_size = params['horizon_size']
+        self.target_summary = params['target_summary']
+        self.horizon_size =   int(self.updated_horizon_size * self.target_summary)
         self.window_size = params['window_size']   
-        
+
+         
         # self.embedded_size = params['lstm_hidden_size'][-1] if params['input_model'] == "lstm" else params['dnn_hidden_size'][-1]
 
         # self.FLAG_pass_CS = True if data_source == "IFE Skycam" and params['_IFE_TARGET'] == "CSI" else False
@@ -60,13 +63,20 @@ class CalibratedDataset(torch.utils.data.Dataset):
         y = self.targets[idx + self.window_size : idx + self.window_size + self.horizon_size]
         cs = self.cs[idx + self.window_size : idx + self.window_size + self.horizon_size]
         idx = self.idx[idx : idx + self.window_size + self.horizon_size]
+
+        if self.target_summary != 1:
+            y = y.view(-1, self.target_summary).mean(dim=1, keepdim=True)
+            new_idx = torch.cat((idx[:self.window_size], idx[self.window_size:self.window_size + self.horizon_size:self.target_summary]))
+            if cs is not None:
+                cs = cs.view(-1, self.target_summary).mean(dim=1, keepdim=True)
+            return [x, y, cs, new_idx]
         return [x,y,cs,idx] 
     def return_quantile(self, batchsize,quantile_dim=1):
         """ returns a quantile tensor of shape (batchsize,window_size,quantile_dim) and a quantile range tensor of shape (quantile_dim)"""
         #TODO needs to be 1 not window_size
         if quantile_dim <= 2:
-            quantile = torch.rand(1, device = self.device)
-            quantiles = quantile.repeat(batchsize,1)
+            quantiles = torch.rand(batchsize, device = self.device).unsqueeze(-1)
+            #quantiles = quantile.repeat(1,1)
         if quantile_dim == 2: # put inverted quantiles in last dim
             quantiles = quantiles.unsqueeze(-1)
             quantiles = torch.cat([quantiles, 1-quantiles], dim=-1)
