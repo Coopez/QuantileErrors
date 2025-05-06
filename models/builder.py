@@ -15,7 +15,8 @@ def build_model(params, device, features=None) -> Sequential:
                            hidden_size= params["lstm_hidden_size"],
                            num_layers= params["lstm_num_layers"],
                            window_size= params["window_size"],
-                           output_size= 1
+                           output_size= 1,
+                           dtype = torch.float64
                            )
         data_output_size = params["lstm_hidden_size"][-1]
 
@@ -42,41 +43,47 @@ def build_model(params, device, features=None) -> Sequential:
                                        output_size= params["horizon_size"])
     elif params["output_model"] == "linear_lattice" or params["output_model"] == "lattice_linear" or params["output_model"] == "lattice":
         assert features is not None, "Features must be provided for lattice model"
-        # output_model = CalibratedLatticeModel( features= features,
-        #                                 output_min= 0,
-        #                                 output_max= 1,
-        #                                 num_layers= params["lattice_num_layers"],
-        #                                 input_dim_per_lattice= params["lattice_dim_input"],
-        #                                 num_lattice_per_layer= params["lattice_num_per_layer"],
-        #                                 output_size= params["horizon_size"],
-        #                                 lattice_keypoints= params["lattice_num_keypoints"],
-        #                                 model_type= params["output_model"],
-        #                                 input_dim= data_output_size,
-        #                                 downsampled_input_dim= params["lattice_donwsampled_dim"],
-        #                                 device= device
-        # )
-        output_model = ParallelLatticeModel(features=features,
-                                        output_min=0,
-                                        output_max=1,
+        output_model = CalibratedLatticeModel( features= features,
+                                        output_min= 0,
+                                        output_max= 1,
                                         num_layers= params["lattice_num_layers"],
-                                        input_dim_per_lattice=params["lattice_dim_input"],
-                                        output_size=params["horizon_size"],
+                                        input_dim_per_lattice= params["lattice_dim_input"],
+                                        output_size= params["horizon_size"],
                                         lattice_keypoints= params["lattice_num_keypoints"],
-                                        model_type=params["output_model"],
-                                        input_dim=data_output_size,
-                                        downsampled_input_dim=params["lattice_donwsampled_dim"],
-                                        device=device
-                                        )
+                                        model_type= params["output_model"],
+                                        input_dim= data_output_size+1,
+                                        downsampled_input_dim= params["lattice_donwsampled_dim"],
+                                        device= device
+        )
+        # output_model = ParallelLatticeModel(features=features,
+        #                                 output_min=0,
+        #                                 output_max=1,
+        #                                 num_layers= params["lattice_num_layers"],
+        #                                 input_dim_per_lattice=params["lattice_dim_input"],
+        #                                 output_size=params["horizon_size"],
+        #                                 lattice_keypoints= params["lattice_num_keypoints"],
+        #                                 model_type=params["output_model"],
+        #                                 input_dim=data_output_size,
+        #                                 downsampled_input_dim=params["lattice_donwsampled_dim"],
+        #                                 device=device
+        #                                 )
     else:
         raise ValueError("Output_Model not implemented")
  
-    output_injection = Output_injector(params["horizon_size"]+data_output_size)
-    model = torch.nn.ModuleList( 
-        [input_model,
-        output_model,
-        output_injection
-        ]
-    ) # was sequential, but I want to be able to run output model x times for different quantiles
+    if params["inject_persistence"]:
+        output_injection = Output_injector(params["horizon_size"]+data_output_size)
+        model = torch.nn.ModuleList( 
+            [input_model,
+            output_model,
+            output_injection
+            ]
+        ) # was sequential, but I want to be able to run output model x times for different quantiles
+    else:
+        model = torch.nn.ModuleList( 
+            [input_model,
+            output_model
+            ]
+        )
     return model
 
 

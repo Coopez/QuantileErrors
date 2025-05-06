@@ -65,7 +65,7 @@ class MinMaxScaler():
         return  y
 
 
-def data_import(base_path = None):
+def data_import(base_path = None,dtype = "float32"):
     filename = "readyDat_time_csi_nights_allseason_nora_cam"
     load_path = "res/"+filename+ ".npz" 
     if base_path is not None:
@@ -73,6 +73,10 @@ def data_import(base_path = None):
     else:
         path = load_path
     data = np.load(path)
+    if dtype == "float32":
+        data = {k: v.astype(np.float32) for k, v in data.items()}
+    elif dtype == "float64":
+        data = {k: v.astype(np.float64) for k, v in data.items()}
     return data['flat_train'], data['target_train'], data['flat_valid'] ,data['target_valid'], data['flat_test'], data['target_test']
 
 

@@ -49,7 +49,6 @@ class CalibratedLatticeModel(nn.Module):
         interpolation: Interpolation = Interpolation.HYPERCUBE,
         num_layers: int = 1,
         input_dim_per_lattice: list = [],
-        num_lattice_per_layer: list = [],
         output_size: int = 1,
         lattice_keypoints: int = 2,
         output_calibration_num_keypoints: Optional[int] = None,
@@ -67,6 +66,14 @@ class CalibratedLatticeModel(nn.Module):
             output_min=0,
             output_max=[feature.lattice_size - 1 for feature in features],
         )
+        
+        num_lattice_per_layer = []
+        input_development = input_dim
+        for _ in range(num_layers):
+            divide = -(-input_development // input_dim_per_lattice)
+            num_lattice_per_layer.append(divide)
+            input_development = divide
+        
         self.input_dim_per_lattice = input_dim_per_lattice
         self.layer_dims = num_lattice_per_layer
         self.output_size = output_size
@@ -85,9 +92,6 @@ class CalibratedLatticeModel(nn.Module):
                 ))
             self.monotonicities = ['increasing' for _ in range(downsampled_input_dim)]
 
-        if model_type != 'lattice_linear':
-            num_layers = num_layers +1 # add one for the linear layer
-
         # Construct lattice layers
         for i in range(num_layers-1):
             # need to stack layers
@@ -98,7 +102,7 @@ class CalibratedLatticeModel(nn.Module):
                 output_max=output_max,
                 kernel_init=kernel_init,
                 interpolation=interpolation,
-                input_dim_per_lattice = self.input_dim_per_lattice[i],
+                input_dim_per_lattice = self.input_dim_per_lattice,
                 num_lattice= self.layer_dims[i],
                 output_calibration_num_keypoints=output_calibration_num_keypoints,
                 num_keypoints=lattice_keypoints,
@@ -112,27 +116,28 @@ class CalibratedLatticeModel(nn.Module):
             linear_output_size = None # if this is not none, will create a linear out.
             num_lattice_last = self.output_size
             input_dim_last = -(self.layer_dims[-1]//- 2) # ceiling division
-        if model_type == 'linear_lattice':
+        if model_type == 'lattice_linear':
             linear_output_size = self.output_size
             num_lattice_last = self.layer_dims[-1]
-            input_dim_last = self.input_dim_per_lattice[-1]
-        self.lattice_layers.append(
-            CalibratedLatticeLayer(
-                monotonicities = self.monotonicities,
-                clip_inputs=clip_inputs,
-                output_min=output_min,
-                output_max=output_max,
-                kernel_init=kernel_init,
-                interpolation=interpolation,
-                input_dim_per_lattice = input_dim_last,
-                num_lattice= num_lattice_last,
-                output_calibration_num_keypoints=output_calibration_num_keypoints,
-                num_keypoints=lattice_keypoints,
-                # output specific parameters
-                output_size=linear_output_size,
-                device=device,
+            input_dim_last = self.input_dim_per_lattice
+        if model_type == "lattice" or model_type == "lattice_linear":
+            self.lattice_layers.append(
+                CalibratedLatticeLayer(
+                    monotonicities = self.monotonicities,
+                    clip_inputs=clip_inputs,
+                    output_min=output_min,
+                    output_max=output_max,
+                    kernel_init=kernel_init,
+                    interpolation=interpolation,
+                    input_dim_per_lattice = input_dim_last,
+                    num_lattice= num_lattice_last,
+                    output_calibration_num_keypoints=output_calibration_num_keypoints,
+                    num_keypoints=lattice_keypoints,
+                    # output specific parameters
+                    output_size=linear_output_size,
+                    device=device,
+                )
             )
-        )
         # self.lattice = nn.Sequential()
         # for layer in self.lattice_layers:
         #     self.lattice.append(layer)
@@ -149,9 +154,8 @@ class CalibratedLatticeModel(nn.Module):
             torch.Tensor: Output tensor after passing through all lattice layers.
         """
         x = calibrate_and_stack(x, self.calibrators)
-        # for lattice_layer in self.lattice_layers: #TODO: Does this need to be in a loop?
-        #     x = lattice_layer(x)
-        x = self.lattice_layers(x) # with sequential i dont need to loop
+        # x = x.to(torch.float32)
+        x = self.lattice_layers(x) 
         return x
     
     @torch.no_grad()

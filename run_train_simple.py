@@ -11,7 +11,7 @@ from res.data import data_import, Data_Normalizer
 from res.ife_data import import_ife_data 
 from dataloader.calibratedDataset import CalibratedDataset
 from pytorch_lattice.models.features import NumericalFeature
-
+import numpy as np
 from losses.qr_loss import SQR_loss
 
 from utils.helper_func import generate_surrogate_quantiles, return_features, return_Dataframe
@@ -19,7 +19,9 @@ from config import _LOG_NEPTUNE, _VERBOSE, params, _DATA_DESCRIPTION
 from models.builder import build_model, build_optimizer
 from training.train_loop import train_model
 from models.persistence_model import Persistence_Model
-
+from data_provider.data_loader import return_cs
+import os
+import pandas as pd
 def train():
 
     if _LOG_NEPTUNE:
@@ -43,10 +45,30 @@ def train():
         run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
 
     if _DATA_DESCRIPTION ==  "Station 11 Irradiance Sunpoint":
-        train,train_target,valid,valid_target,_,_ = data_import()
-        if params['_INPUT_SIZE_LSTM'] == 1:
-            train = train[:,11] # disable if training on all features/stations
-        valid = valid[:,11]
+        train,train_target,valid,valid_target,_,test_target= data_import(dtype="float64")
+
+        _loc_data = os.getcwd()
+        cs_valid, cs_test, cs_train, day_mask,cs_de_norm = return_cs(os.path.join(_loc_data,"data"))
+
+        # cs is not used in forward pass, but may be used in metrics and does not need to be normalized
+        # cs_valid = cs_valid *cs_de_norm["valid"][1] +cs_de_norm["valid"][0]
+        # cs_test = cs_test*cs_de_norm["test"][1] + cs_de_norm["test"][0]
+        # cs_train = cs_train*cs_de_norm["train"][1] + cs_de_norm["train"][0]
+
+        # simple case: 1 station, all features. 
+        # for this we need the 11th feature and all features + number of features. Any leftover will also be needed as the latest features are just embedded time. 
+        # there should be 12 vars with 20 stations. 
+        # station_index = [11+i*20 for i in range(0,12)] + [240, 241, 242,243,244,245]
+        # train = train[:,station_index]
+        # valid = valid[:,station_index]
+        start_date = "2016-01-01 00:30:00"
+        end_date = "2020-12-31 23:30:00"    
+        index = pd.date_range(start=start_date, end = end_date, freq = '1h', tz='CET')
+        i_series = np.arange(0, len(index), 1)
+        train_index = i_series[len(test_target)+len(valid_target):]
+        valid_index = i_series[len(test_target):len(test_target)+len(valid_target)]
+        overall_time = index.values
+        
     elif _DATA_DESCRIPTION == "IFE Skycam":
         train,train_target,valid,valid_target,cs_train, cs_valid, overall_time, train_index, valid_index= import_ife_data(params) # has 22 features now, 11 without preprocessing
         train,train_target,valid,valid_target, cs_train, cs_valid, overall_time= train.values,train_target.values,valid.values,valid_target.values, cs_train.values, cs_valid.values, overall_time.values

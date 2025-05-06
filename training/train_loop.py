@@ -6,7 +6,7 @@ import numpy as np
 from neptune.utils import stringify_unsupported
 from debug.model import print_model_parameters
 from debug.plot import Debug_model
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau,MultiStepLR
 
 def train_model(params,
                 model,
@@ -36,7 +36,8 @@ def train_model(params,
     epochs = params['epochs']
     if params['deterministic_optimization']:
         epochs = 1
-    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=1, factor=0.1)
+    plateau_scheduler = ReduceLROnPlateau(optimizer, 'min', patience=1, factor=0.1)
+    # step_scheduler = MultiStepLR(optimizer, milestones=[3], gamma=0.01)
     plot_ids = sorted(list(set([int(x * (512 / params["batch_size"])) for x in [7,24,14,22,37,8,3]])))
     #26,27,7,24,14,22,37,8,3,4,38 with 512
     #old 122, 128, 136, 131, 184, 124, 278 with 64 
@@ -60,7 +61,7 @@ def train_model(params,
             output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
             # Compute loss
             loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
-
+            # debug = Debug_model(model,output,target)
             #Backward pass and optimization
             optimizer.zero_grad()
             loss.backward()
@@ -144,7 +145,8 @@ def train_model(params,
         if params['loss']== 'calibration_sharpness_loss':
             step_meta["Sharpness"] = np.mean(sharp_losses)
         scheduler_metrics = metric.summarize_metrics({**step_meta, **metric_dict},neptune = log_neptune,neptune_run=neptune_run)
-        scheduler.step(scheduler_metrics["CRPS"])
+        plateau_scheduler.step(scheduler_metrics["CRPS"])
+        # step_scheduler.step(epoch=epoch)
     return model
 
 

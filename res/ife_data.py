@@ -44,7 +44,7 @@ def import_ife_data(params:dict, dtype = "float32",base_path = None):
     # Split data
     if dtype == "float32":
         trainval_df = trainval_df.astype(np.float32)
-    split = 0.78 #0.78 0.74  TODO find out why 0.78 returns the wrong day.
+    split = 0.85 #0.78 #0.78 0.74  TODO find out why 0.78 returns the wrong day.
     train_index = index_trainval[:int(len(index_trainval)*split)]
     val_index = index_trainval[int(len(index_trainval)*(split)):]
     # train_data = trainval_df.iloc[:int(len(index_trainval)*split)]

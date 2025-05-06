@@ -14,7 +14,7 @@ class Debug_model():
         for q in quantiles:
             q_in = torch.tensor(q).repeat(x.shape[0],1).to(x.device)
             # x = bn.transform(x)
-            pred = model(x,q_in,valid_run=True)
+            pred = model(x,q_in)
             # pred = bn.inverse_transform(pred)
             cdf.append(pred)
         self.cdf = torch.stack(cdf,dim=-1).squeeze(-2)

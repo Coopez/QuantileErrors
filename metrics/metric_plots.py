@@ -27,19 +27,19 @@ class MetricPlots:
         pinaw, pinaw_interval =PINAW(pred,truth,quantiles=quantile, return_counts=False,return_array=True)
         picp_c, picp_c_quantiles = PICP_quantile(pred,truth,quantiles=quantile, return_counts=False,return_array=True)   
         corrs = error_uncertainty(pred,truth)
-        ss_score = Skill_score(truth = truth, y = pred[...,midpoint].unsqueeze(-1),p = pers)
-        ss = ss_score.evaluate_timestep().squeeze().detach().cpu().numpy()
+        # ss_score = Skill_score(truth = truth, y = pred[...,midpoint].unsqueeze(-1),p = pers)
+        # ss = ss_score.evaluate_timestep().squeeze().detach().cpu().numpy()
         if self.range_dict["PICP"] is None:
             self.range_dict["PICP"] = picp_interval
             self.range_dict["PINAW"] = pinaw_interval
             self.range_dict["Cali_PICP"] = picp_c_quantiles
             self.range_dict["Correlation"] = range(corrs.shape[0])
-            self.range_dict["SkillScore"] = range(ss.shape[0])
+            # self.range_dict["SkillScore"] = range(ss.shape[0])
         metrics["PICP"].append(picp)
         metrics["PINAW"].append(pinaw)
         metrics["Cali_PICP"].append(picp_c)
         metrics["Correlation"].append(corrs.tolist())
-        metrics["SkillScore"].append(ss.tolist())
+        # metrics["SkillScore"].append(ss.tolist())
 
         return metrics
     """
@@ -60,7 +60,7 @@ class MetricPlots:
         summary["Cali_PICP"] = np.mean(np.array(metrics["Cali_PICP"]),axis = 0)
         summary["Correlation"] = np.mean(np.array(metrics["Correlation"]),axis = 0)
         summary["Correlation"]= np.stack((summary["Correlation"],np.std(np.array(metrics["Correlation"]),axis = 0)))
-        summary["SkillScore"] = np.mean(np.array(metrics["SkillScore"]),axis = 0)
+        # summary["SkillScore"] = np.mean(np.array(metrics["SkillScore"]),axis = 0)
         return summary
 
     

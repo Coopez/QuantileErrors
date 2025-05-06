@@ -53,6 +53,8 @@ class CalibratedDataset(torch.utils.data.Dataset):
         self.targets = torch.from_numpy(y.copy())[:, None].to(device)
         if cs is not None:
             self.cs = torch.from_numpy(cs.copy())[:, None].to(device)
+        else:
+            self.cs = None
 
     def __len__(self):
         return self.length - self.window_size - self.horizon_size + 1
@@ -61,7 +63,9 @@ class CalibratedDataset(torch.utils.data.Dataset):
 
         x = self.data[idx : idx + self.window_size]
         y = self.targets[idx + self.window_size : idx + self.window_size + self.horizon_size]
-        cs = self.cs[idx + self.window_size : idx + self.window_size + self.horizon_size]
+
+        if self.cs is not None:
+            cs = self.cs[idx + self.window_size : idx + self.window_size + self.horizon_size]
         idx = self.idx[idx : idx + self.window_size + self.horizon_size]
 
         if self.target_summary != 1:
@@ -70,13 +74,21 @@ class CalibratedDataset(torch.utils.data.Dataset):
             if cs is not None:
                 cs = cs.view(-1, self.target_summary).mean(dim=1, keepdim=True)
             return [x, y, cs, new_idx]
-        return [x,y,cs,idx] 
-    def return_quantile(self, batchsize,quantile_dim=1):
+        if self.cs is not None:
+
+            return [x,y,cs,idx] 
+        else:
+            return [x,y,0,idx]
+    def return_quantile(self, batchsize,quantile_dim=1, constant = False):
         """ returns a quantile tensor of shape (batchsize,window_size,quantile_dim) and a quantile range tensor of shape (quantile_dim)"""
         #TODO needs to be 1 not window_size
         if quantile_dim <= 2:
-            quantiles = torch.rand(batchsize, device = self.device).unsqueeze(-1)
-            #quantiles = quantile.repeat(1,1)
+            if constant:
+                quantile = torch.rand(1, device = self.device)
+                quantiles = quantile.repeat(batchsize,1)
+            else:
+                quantiles = torch.rand(batchsize, device = self.device).unsqueeze(-1)
+                #quantiles = quantile.repeat(1,1)
         if quantile_dim == 2: # put inverted quantiles in last dim
             quantiles = quantiles.unsqueeze(-1)
             quantiles = torch.cat([quantiles, 1-quantiles], dim=-1)

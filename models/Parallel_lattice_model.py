@@ -97,10 +97,11 @@ class ParallelLatticeModel(nn.Module):
 
         if model_type != 'lattice_linear':
             num_layers = num_layers +1 # add one for the linear layer
-
+            raise ValueError("Model type not implemented")
+        #TODO this wont work with current implmentation, the layer needs an outputsize to make a clinear layer
 
         # layer logic:
-        number_of_lattices = lattice_layerer(self.input_dim,self.input_dim_per_lattice)
+        number_of_lattices = lattice_layerer(self.input_dim,self.input_dim_per_lattice) #TODO rethink. This may not work correctly with all output sizes. 
         # number_of_layers = len(number_of_lattices)
         # temp_mononoticities = self.monotonicities
         lattice_ensemble = nn.ModuleList()

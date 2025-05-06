@@ -1,7 +1,7 @@
 # Config for main.py
 
-_DATA_DESCRIPTION = "IFE Skycam"#"Station 11 Irradiance Sunpoint" # Description of the data set
-_LOG_NEPTUNE = True # determines if neptune is used
+_DATA_DESCRIPTION = "Station 11 Irradiance Sunpoint" #"IFE Skycam"# Description of the data set 
+_LOG_NEPTUNE = False # determines if neptune is used
 _VERBOSE = True # determines if printouts to console are made - should be False for ML cluster tasks
 
 
@@ -9,24 +9,23 @@ _VERBOSE = True # determines if printouts to console are made - should be False 
 params = dict(
 
 debug = False, # Determines some debug outputs
-
-batch_size = 256, # Batchsize 
+batch_size = 128 , # Batchsize 
 random_seed = 0, # Random seed
 train_shuffle = True, # Determines if data is shuffled
 valid_shuffle = False, # Determines if data is shuffled
 dataloader_device = 'cpu', # determines if data is loaded on cpu or gpu
 target = 'GHI', # or 'GHI' or 'ERLING_SETTINGS'
 target_summary = 1, # mean window, will not change anything if set to 1
-learning_rate = 0.0001, #0.1, # Learning rate
-epochs = 400, # Number of epochs
+learning_rate = 0.001, #0.1, # Learning rate
+epochs = 200, # Number of epochs
 deterministic_optimization= False, # Determines if optimization is deterministic
-window_size = 90, # Lookback size
-horizon_size = 90,#90,#12, # Horizon size
+window_size = 96, # Lookback size
+horizon_size = 36,#90,#12, # Horizon size
 
-inject_persistence = True, # Determines if persistence model is injected
+inject_persistence = False, # Determines if persistence model is injected
 # LSTM Hyperparameters
-lstm_input_size = 22,  # Number of features 246 if all stations of sunpoint are used or 11,22 for IFE
-lstm_hidden_size = [32,32], # LIST of number of nodes in hidden layers TODO will run into error if layers of different sizes. This is because hidden activation
+lstm_input_size = 246, #22,  # Number of features 246 if all stations of sunpoint are used or 11,22 for IFE
+lstm_hidden_size = [12,12], # LIST of number of nodes in hidden layers TODO will run into error if layers of different sizes. This is because hidden activation
 lstm_num_layers = 2, # Number of layers
 
 dnn_input_size = 22,  # input will be that * window_size
@@ -36,9 +35,9 @@ dnn_activation = 'relu', # Activation function
 # Lattice Hyperparameters
 lattice_num_layers = 1, # Number of layers
 # lattice_num_per_layer = [28], # LIST
-lattice_dim_input = 3, # input dim per lattice
+lattice_dim_input = 2, # input dim per lattice
 lattice_num_keypoints = 5, # Number of keypoints
-lattice_calibration_num_keypoints = 5, # Number of keypoints in calibration layer
+lattice_calibration_num_keypoints = 2, # Number of keypoints in calibration layer
 lattice_donwsampled_dim = 13, # Dimension of downsampled input when using linear_lattice
 
 
@@ -47,7 +46,7 @@ loss_calibration_lambda = 0.0, # Lambda for beyond loss
 loss_calibration_scale_sharpness = True, # Determines if sharpness is scaled by quantile
 
 loss = 'pinball_loss', 
-#options = 'calibration_sharpness_loss', 'pinball_loss',
+#options = 'calibration_sharpness_loss', 'huber_pinball_loss',
 
 optimizer = 'Adam', # dont try to rename. this is used to search for optimizer in builder.py
 #optimizer_option = 'Adam', 'RAdam', 'NAdam', 'RMSprop', 'AdamW',
@@ -57,15 +56,15 @@ metrics =  {"ACE": [],
             "MAE": [], 
             "RMSE": [],
             #"CS_L": [],  # new abbreviation for Calibration Sharpness Loss or Beyond Loss
-            "CRPS": [],
-            "SS": [],
-            "SS_filt":[]}, 
+            "CRPS": []},
+            # "SS": [],
+            # "SS_filt":[]}, 
             #TODO SkillScore
 array_metrics = {"PICP": [],
             "Cali_PICP": [],
             "PINAW": [],
-            "Correlation": [],
-            "SkillScore": []}, # metrics which are in lists and thus not suitable for neptune logging. We will calculate them seperately and push them into the example plots
+            "Correlation": []},
+            # "SkillScore": []}, # metrics which are in lists and thus not suitable for neptune logging. We will calculate them seperately and push them into the example plots
 
 
 
@@ -73,7 +72,7 @@ metrics_quantile_dim = 11, # can be 5, 9 for more accuracy, or 99 for full quant
 
 input_model = "lstm",
 #options = "lstm", "dnn"
-output_model = "dnn",
+output_model = "lattice_linear",
 #options = "lattice", "linear", "constrained_linear", "linear_lattice", "lattice_linear",  
 
 

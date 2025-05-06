@@ -13,8 +13,9 @@ def generate_surrogate_quantiles(length: int, params: dict):
     return quantiles
 
 def return_features(quantiles:np.ndarray,params:dict,data:np.ndarray = None):
+    #TODO this function seems to be inprecise and potentially buggy, need to check the logic and the data flow
     if data is None:
-        amount = params['lstm_hidden_size'][-1] -1
+        amount = params['lstm_hidden_size'][-1]
     features = []
     data_features = params['lstm_input_size'] # this is the expected number of features in the data
     quantiles = np.expand_dims(quantiles, axis=-1) if len(quantiles.shape) == 1 else quantiles
@@ -22,17 +23,15 @@ def return_features(quantiles:np.ndarray,params:dict,data:np.ndarray = None):
         data = np.expand_dims(data, axis=-1) if len(data.shape) == 1 else data
     
     if params['input_model'] == 'lstm':
-        amount = params['lstm_hidden_size'][-1] -1
+        amount = params['lstm_hidden_size'][-1]
     elif params['input_model'] == 'dnn':
-        amount = params['dnn_hidden_size'][-1] -1
+        amount = params['dnn_hidden_size'][-1]
     else:
         amount = data_features
     data = np.random.uniform(0, 1, (quantiles.shape[0], amount)) if data is None else data
     
     for i in range(amount):
         features.append(NumericalFeature(f"feature_{i}", data[...,i], num_keypoints=params['lattice_calibration_num_keypoints']))
-    # for i in range(quantiles.shape[-1]):
-    #     features.append(NumericalFeature(f"quantiles_{i}", quantiles[...,i], num_keypoints=params['_NUM_KEYPOINTS'], monotonicity=Monotonicity.INCREASING))
     features.append(NumericalFeature(f"quantiles_0", quantiles[...,0], num_keypoints=params['lattice_calibration_num_keypoints'], monotonicity=Monotonicity.INCREASING))
     return features
 

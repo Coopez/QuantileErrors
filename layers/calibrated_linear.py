@@ -84,11 +84,15 @@ class Linear(ConstrainedModule):
         self.use_bias = use_bias if not weighted_average else False
         self.weighted_average = weighted_average
 
-        self.kernel = torch.nn.Parameter(torch.Tensor(input_dim, output_dim),requires_grad=True)
-        torch.nn.init.constant_(self.kernel, 1.0 / input_dim)
+        self.kernel = torch.nn.Parameter(torch.empty((input_dim, output_dim), dtype=torch.float64),requires_grad=True)
+        # torch.nn.init.uniform_(self.kernel, a=0.0, b=1.0)
+        torch.nn.init.xavier_uniform_(self.kernel)
+        # torch.nn.init.constant_(self.kernel, 1.0 / input_dim)
         if use_bias:
             self.bias = torch.nn.Parameter(torch.zeros(output_dim),requires_grad=True)
-            #torch.nn.init.constant_(self.bias, 0.0)
+            # torch.nn.init.xavier_uniform_(self.bias)
+            # torch.nn.init.uniform_(self.bias, a=0.0, b=1.0)
+            torch.nn.init.constant_(self.bias, 0.0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Transforms inputs using a linear combination.
@@ -99,6 +103,7 @@ class Linear(ConstrainedModule):
         Returns:
             torch.Tensor of shape `(batch_size, 1)` containing transformed input values.
         """
+        # x = x.to(torch.float32)
         result = torch.matmul(x, self.kernel)
         if self.use_bias:
             result += self.bias
