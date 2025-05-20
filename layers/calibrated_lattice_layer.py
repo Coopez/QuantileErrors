@@ -19,6 +19,7 @@ from pytorch_lattice.utils.models import (
 )
 from pytorch_lattice.models.features import CategoricalFeature, NumericalFeature
 from layers.rtl import RTL
+from layers.quantile_lattice import Constrained_Quantile_Lattice
 #from pytorch_lattice.layers import RTL
 
 import numpy as np
@@ -78,6 +79,7 @@ class CalibratedLatticeLayer(ConstrainedModule):
         num_lattice: int = 1,
         num_keypoints: int = 2,
         device=None,
+        quantile_distribution: str = "single",
     ) -> None:
         """Initializes an instance of `CalibratedLattice`.
 
@@ -108,18 +110,34 @@ class CalibratedLatticeLayer(ConstrainedModule):
         self.output_calibration_num_keypoints = output_calibration_num_keypoints
         self.monotonicities = monotonicities
         self.output_size = output_size
-    
-        self.lattice = RTL(
-            num_lattices= num_lattice,
-            lattice_rank=input_dim_per_lattice,
-            lattice_size=num_keypoints,
-            monotonicities=self.monotonicities,
-            clip_inputs=self.clip_inputs,
-            output_min=self.output_min,
-            output_max=self.output_max,
-            interpolation=interpolation,
-            kernel_init=kernel_init,
-        )
+        if quantile_distribution == "all":
+            self.lattice = Constrained_Quantile_Lattice(
+                num_lattices= num_lattice,
+                lattice_rank=input_dim_per_lattice,
+                lattice_size=num_keypoints,
+                monotonicities=self.monotonicities,
+                clip_inputs=self.clip_inputs,
+                output_min=self.output_min,
+                output_max=self.output_max,
+                interpolation=interpolation,
+                kernel_init=kernel_init,
+                
+            )
+        elif quantile_distribution == "single":
+            self.lattice = RTL(
+                num_lattices= num_lattice,
+                lattice_rank=input_dim_per_lattice,
+                lattice_size=num_keypoints,
+                monotonicities=self.monotonicities,
+                clip_inputs=self.clip_inputs,
+                output_min=self.output_min,
+                output_max=self.output_max,
+                interpolation=interpolation,
+                kernel_init=kernel_init,
+                
+            )
+        else:
+            raise ValueError("quantile_distribution must be 'all' or 'single'")
         self.output_monotonicties = self.lattice.output_monotonicities()
         if self.output_calibration_num_keypoints is not None:
             output_calibrators = {}
@@ -140,6 +158,8 @@ class CalibratedLatticeLayer(ConstrainedModule):
         #     output_max=output_max,
         # )
         if self.output_size is not None:
+            if quantile_distribution == "all":
+                num_lattice = int(len(self.monotonicities) / (input_dim_per_lattice))
             self.layer_output = Linear(num_lattice, self.output_size, self.output_monotonicties)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

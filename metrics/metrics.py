@@ -423,6 +423,11 @@ class Metrics():
         # pred_denorm = pred_denorm *  cs if self.cs_multiplier else pred_denorm
         # truth_denorm = truth_denorm * cs if self.cs_multiplier else truth_denorm
         median = pred_denorm[...,int(self.quantile_dim/2)].unsqueeze(-1)
+        
+        if self.params["valid_clamp_output"]: # Clamping the output to be >= 0.0
+            pred_denorm = torch.clamp(pred_denorm, min=0.0)
+            median = torch.clamp(median, min=0.0)
+        
         for metric in self.metrics:
             
             if metric == 'CS_L':

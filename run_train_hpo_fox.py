@@ -7,7 +7,7 @@ from metrics.metric_plots import MetricPlots
 from res.data import data_import, Data_Normalizer
 from res.ife_data import import_ife_data 
 from dataloader.calibratedDataset import CalibratedDataset
-
+from data_provider.data_loader import return_cs
 from losses.qr_loss import SQR_loss
 
 from utils.helper_func import generate_surrogate_quantiles, return_features, return_Dataframe
@@ -19,7 +19,7 @@ import optuna
 import logging
 import sys
 import os
-
+import pandas as pd
 from losses.qr_loss import sharpness_loss
 import numpy as np
 from neptune.utils import stringify_unsupported
@@ -33,36 +33,21 @@ CHECKPOINT_DIR = "optuna_checkpoint"
 BASE_PATH = os.environ['SLURM_SUBMIT_DIR']
 os.makedirs(BASE_PATH, exist_ok=True)
 
-RUN_NAME = "HPO_LSTM_DNN-1" 
+RUN_NAME = "HO_DNN_LINEAR-0" 
 
 """
 We already had:
-LSTM_LINEAR-1 - first LSTM run
-LSTM_LINEAR-2
-LSTM_LINEAR-3 - fixed pruning
-LSTM_LINEAR-4 - full run with local
-LSTM_LINEAR-5 - full run fox, without min, with pruning.
-LSTM_LINEAR-6 2nd test without tau scaling
-LSTM_LINEAR-7 new test run with injected smart_persistence
-LSTM_LINEAR-8  tau has been cut, now doing 1min scale
+HPO is the old name. We are going with HO now 
+LSTM_LINEAR-0 - test run
+LSTM_LINEAR-1 - run with scheduler tuned to ACE. 
+LSTM_LINEAR-2 - run with scheduler tuned to CRPS.
+LSTM_LINEAR-3 - testing larger hidden size up to 256
 
-LSTM_CONST_LINEAR-1
-LSTM_CONST_LINEAR-2 - full run fox, without min, with pruning.
-LSTM_CONST_LINEAR-3 - 1st new test run with injected smart_persistence
-LSTM_CONST_LINEAR-4 - 2nd test without tau scaling
-LSTM_CONST_LINEAR-5 - tau has been cut, now doing 1min scale
+LSTM_DNN-0 - run with scheduler tuned to CRPS.
+LSTM_DNN-1 - testing larger hidden size up to 256
 
-LSTM_DNN-1 - first run with DNN_out and scheduler
 
-DNN_LINEAR-1
-DNN_LINEAR-2 - first DNN run
-DNN_LINEAR-3 - 
-DNN_LINEAR-4 - 
-DNN_LINEAR-5 - full run fox, without min, with pruning.
-
-DNN_CONST_LINEAR-1
-DNN_CONST_LINEAR-2 - full run fox, without min, with pruning.
-
+DNN_LINEAR-0 - initial run with up to 4 layers and 128 ns
 
 """
 
@@ -72,7 +57,7 @@ def objective(trial):
     hpo_hidden_size = trial.suggest_categorical("hidden_size", params["hpo_hidden_size"])
     hpo_num_layers = trial.suggest_categorical("num_layers", params["hpo_num_layers"])
     params["learning_rate"] = trial.suggest_categorical("learning_rate", params["hpo_lr"])
-    params["window_size"] = trial.suggest_categorical("window_size", params["hpo_window_size"])
+    # params["window_size"] = trial.suggest_categorical("window_size", params["hpo_window_size"])
 
     if params["input_model"] == 'lstm':
         params['lstm_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
@@ -101,10 +86,17 @@ def objective(trial):
         run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
 
     if _DATA_DESCRIPTION ==  "Station 11 Irradiance Sunpoint":
-        train,train_target,valid,valid_target,_,_ = data_import(base_path=BASE_PATH)
-        if params['_INPUT_SIZE_LSTM'] == 1:
-            train = train[:,11] # disable if training on all features/stations
-        valid = valid[:,11]
+        train,train_target,valid,valid_target,_,test_target= data_import() #dtype="float64"
+        _loc_data = os.getcwd()
+        cs_valid, cs_test, cs_train, day_mask,cs_de_norm = return_cs(os.path.join(_loc_data,"data"))
+
+        start_date = "2016-01-01 00:30:00"
+        end_date = "2020-12-31 23:30:00"    
+        index = pd.date_range(start=start_date, end = end_date, freq = '1h', tz='CET')
+        i_series = np.arange(0, len(index), 1)
+        train_index = i_series[len(test_target)+len(valid_target):]
+        valid_index = i_series[len(test_target):len(test_target)+len(valid_target)]
+        overall_time = index.values
     elif _DATA_DESCRIPTION == "IFE Skycam":
         train,train_target,valid,valid_target,cs_train, cs_valid, overall_time, train_index, valid_index= import_ife_data(params,base_path=BASE_PATH) # has 22 features now, 11 without preprocessing
         train,train_target,valid,valid_target, cs_train, cs_valid, overall_time= train.values,train_target.values,valid.values,valid_target.values, cs_train.values, cs_valid.values, overall_time.values
@@ -164,11 +156,14 @@ def objective(trial):
     return final_loss
 
 
-def return_loss(metrics):
+def return_loss(metrics, compount=True):
     for metric, value in metrics.items():
             metrics[metric] = np.mean(value)
-    metrics["optuna_loss"] = metrics["CRPS"] + metrics["ACE"] * metrics["CRPS"]
-    return metrics # ace has to be scaled by crps to be comparable
+    if compount:
+        metrics["optuna_loss"] = metrics["CRPS"] + metrics["ACE"] * metrics["CRPS"]
+    else:
+        metrics["optuna_loss"] = metrics["CRPS"]
+    return metrics 
 
 # Training loop
 
@@ -227,7 +222,7 @@ def train_model(params,
             else:
                 pers = None    
             quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
-            quantile = quantile.to(device)
+            quantile = quantile.to(device) # this line may be unnecessary, but it is not a problem to have it here.
 
 
 
@@ -266,8 +261,8 @@ def train_model(params,
                     quantile,q_range = data_valid.return_quantile(training_data.shape[0],quantile_dim=params["metrics_quantile_dim"])
                     quantile, q_range = quantile.to(device), q_range.to(device)
                     output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
-                    if params['valid_clamp_output']:
-                        output = torch.clamp(output,min=0)
+                    # if params['valid_clamp_output']:
+                    #     output = torch.clamp(output,min=0)
                     
                     metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range)
                     if epoch == params['epochs'] - 1:
@@ -278,7 +273,7 @@ def train_model(params,
 
 
         report_metrics = return_loss(metric_dict)
-        scheduler.step(report_metrics["ACE"])
+        scheduler.step(report_metrics["CRPS"])
         trial.report(report_metrics["optuna_loss"],epoch)
         # run["status/epoch_time"] = epoch_time
         # run["status/epoch"] = epoch
@@ -299,12 +294,12 @@ def train_model(params,
             temp_path,
         )
         trial.set_user_attr("last_checkpoint", trial.number)
-        # Handle pruning based on the intermediate value.
-        if trial.should_prune():
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            #return min_loss
-            raise optuna.exceptions.TrialPruned()
+        # # Handle pruning based on the intermediate value.
+        # if trial.should_prune():
+        #     if os.path.exists(temp_path):
+        #         os.remove(temp_path)
+        #     #return min_loss
+        #     raise optuna.exceptions.TrialPruned()
     
     if os.path.exists(temp_path):
         os.remove(temp_path)
@@ -368,11 +363,19 @@ if __name__ == "__main__":
     storage_path = os.path.join(BASE_PATH,study_name)
     storage_name = "sqlite:///{}.db".format(storage_path)
 
-    sampler = optuna.samplers.RandomSampler() # grid wants all values again in searchspace which is weird.
-    # pruner = optuna.pruners.SuccessiveHalvingPruner(reduction_factor=3,min_early_stopping_rate=5)
-    pruner = optuna.pruners.HyperbandPruner(min_resource=1,max_resource=params["epochs"],reduction_factor=5)
 
-    study = optuna.create_study(study_name=study_name, storage=storage_name, load_if_exists=True, direction="minimize", sampler=sampler, pruner=pruner)
+    search_space = {
+        "hidden_size": params["hpo_hidden_size"],
+        "num_layers": params["hpo_num_layers"],
+        "learning_rate": params["hpo_lr"]
+    }
+    sampler = optuna.samplers.GridSampler(search_space)
+    
+    #optuna.samplers.RandomSampler() # grid wants all values again in searchspace which is weird.
+    # pruner = optuna.pruners.SuccessiveHalvingPruner(reduction_factor=3,min_early_stopping_rate=5)
+    # pruner = optuna.pruners.HyperbandPruner(min_resource=1,max_resource=params["epochs"],reduction_factor=5)
+
+    study = optuna.create_study(study_name=study_name, storage=storage_name, load_if_exists=True, direction="minimize", sampler=sampler)
     # if study.trials == []:
         # Encuing some trials to get a better starting point
 
@@ -387,7 +390,7 @@ if __name__ == "__main__":
     #     study.enqueue_trial(study.trials[-1].params,user_attrs={"last_checkpoint":idx})
     #     print("RESTORATOR: Continuing unfinished trial.")
     #     study.optimize(objective, n_trials=1,callbacks=[neptune_callback])
-    study.optimize(objective, n_trials=400,callbacks=[neptune_callback],show_progress_bar=False)
+    study.optimize(objective, n_trials=35,callbacks=[neptune_callback],show_progress_bar=False)
 
     run.stop()
 

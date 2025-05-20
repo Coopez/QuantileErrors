@@ -2,7 +2,6 @@ __pycache__
 *.pth
 .neptune
 STRIPE-main
-data
 example.py
 kernel_reg.py
 *.pt

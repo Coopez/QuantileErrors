@@ -45,22 +45,10 @@ def train():
         run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
 
     if _DATA_DESCRIPTION ==  "Station 11 Irradiance Sunpoint":
-        train,train_target,valid,valid_target,_,test_target= data_import(dtype="float64")
-
+        train,train_target,valid,valid_target,_,test_target= data_import() #dtype="float64"
         _loc_data = os.getcwd()
         cs_valid, cs_test, cs_train, day_mask,cs_de_norm = return_cs(os.path.join(_loc_data,"data"))
 
-        # cs is not used in forward pass, but may be used in metrics and does not need to be normalized
-        # cs_valid = cs_valid *cs_de_norm["valid"][1] +cs_de_norm["valid"][0]
-        # cs_test = cs_test*cs_de_norm["test"][1] + cs_de_norm["test"][0]
-        # cs_train = cs_train*cs_de_norm["train"][1] + cs_de_norm["train"][0]
-
-        # simple case: 1 station, all features. 
-        # for this we need the 11th feature and all features + number of features. Any leftover will also be needed as the latest features are just embedded time. 
-        # there should be 12 vars with 20 stations. 
-        # station_index = [11+i*20 for i in range(0,12)] + [240, 241, 242,243,244,245]
-        # train = train[:,station_index]
-        # valid = valid[:,station_index]
         start_date = "2016-01-01 00:30:00"
         end_date = "2020-12-31 23:30:00"    
         index = pd.date_range(start=start_date, end = end_date, freq = '1h', tz='CET')

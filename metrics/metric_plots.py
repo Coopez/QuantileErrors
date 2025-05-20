@@ -148,6 +148,10 @@ class MetricPlots:
             pred_denorm = pred_denorm * cs.detach().cpu().numpy()
             truth_denorm = truth_denorm * cs.detach().cpu().numpy()
 
+        if self.params["valid_clamp_output"]:
+            pred_denorm = np.clip(pred_denorm,a_min = 0,a_max = None)
+
+
         # Plotting
         target_max = self.normalizer.max_target
          

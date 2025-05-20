@@ -105,8 +105,8 @@ def train_model(params,
                     quantile,q_range = data_valid.return_quantile(training_data.shape[0],quantile_dim=params["metrics_quantile_dim"])
 
                     output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
-                    if params['valid_clamp_output']:
-                        output = torch.clamp(output,min=0)
+                    # if params['valid_clamp_output']:
+                    #     output = torch.clamp(output,min=0)
 
                     
                     # pers_loss = torch.mean(torch.abs(target - pers)).detach().cpu().numpy().item()
@@ -171,9 +171,13 @@ def forward_pass(params:dict,
     
     for i in range(quantile_dim):
         aggregated_input = torch.cat([embedded,quantile[...,i]],dim=-1)
-        output[...,i] = model[1](aggregated_input)
+        # output[...,i] = model[1](aggregated_input)
         if persistence is not None:
-            output[...,i] = model[2](x = output[...,i],c = persistence.squeeze(),tau = quantile[0,0,i], x_input =aggregated_input)
+            output_i = model[1](aggregated_input)
+            persistence_output = model[2](x = output_i,c = persistence.squeeze(),tau = quantile[0,0,i], x_input =aggregated_input)
+            output[...,i] = persistence_output
+        else:
+            output[...,i] = model[1](aggregated_input)
     return output
 
 

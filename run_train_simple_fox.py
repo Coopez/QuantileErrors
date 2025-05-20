@@ -19,7 +19,9 @@ from config import _LOG_NEPTUNE, _VERBOSE, params, _DATA_DESCRIPTION
 from models.builder import build_model, build_optimizer
 from training.train_loop import train_model
 from models.persistence_model import Persistence_Model
-
+from data_provider.data_loader import return_cs
+import pandas as pd
+import numpy as np
 import os
 BASE_PATH = os.environ['SLURM_SUBMIT_DIR']
 os.makedirs(BASE_PATH, exist_ok=True)
@@ -47,10 +49,17 @@ def train():
         run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
 
     if _DATA_DESCRIPTION ==  "Station 11 Irradiance Sunpoint":
-        train,train_target,valid,valid_target,_,_ = data_import()
-        if params['_INPUT_SIZE_LSTM'] == 1:
-            train = train[:,11] # disable if training on all features/stations
-        valid = valid[:,11]
+        train,train_target,valid,valid_target,_,test_target= data_import() #dtype="float64"
+        _loc_data = os.getcwd()
+        cs_valid, cs_test, cs_train, day_mask,cs_de_norm = return_cs(os.path.join(_loc_data,"data"))
+
+        start_date = "2016-01-01 00:30:00"
+        end_date = "2020-12-31 23:30:00"    
+        index = pd.date_range(start=start_date, end = end_date, freq = '1h', tz='CET')
+        i_series = np.arange(0, len(index), 1)
+        train_index = i_series[len(test_target)+len(valid_target):]
+        valid_index = i_series[len(test_target):len(test_target)+len(valid_target)]
+        overall_time = index.values
     elif _DATA_DESCRIPTION == "IFE Skycam":
         train,train_target,valid,valid_target,cs_train, cs_valid, overall_time, train_index, valid_index= import_ife_data(params) # has 22 features now, 11 without preprocessing
         train,train_target,valid,valid_target, cs_train, cs_valid, overall_time= train.values,train_target.values,valid.values,valid_target.values, cs_train.values, cs_valid.values, overall_time.values

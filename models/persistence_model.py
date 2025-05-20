@@ -2,9 +2,12 @@ import torch
 import pandas as pd
 import numpy as np
 class Persistence_Model():
-    def __init__(self,normalizer,params):
-
+    def __init__(self,normalizer,params,data_from="Station 11 Irradiance Sunpoint"):
         self.data = pd.read_pickle('models/persistence.pkl')
+        # if data_from == "IFE Skycam":
+        #     self.data = pd.read_pickle('models/persistence.pkl')
+        # elif data_from == "Station 11 Irradiance Sunpoint":
+        #     self.data = pd.read_pickle('models/sunpoint_persistence.pkl')
         self.index = self.data.index
         self.data = torch.tensor(self.data.values).float()
         self.min = normalizer.min_target

@@ -15,8 +15,8 @@ def build_model(params, device, features=None) -> Sequential:
                            hidden_size= params["lstm_hidden_size"],
                            num_layers= params["lstm_num_layers"],
                            window_size= params["window_size"],
-                           output_size= 1,
-                           dtype = torch.float64
+                           output_size= 1
+                        #    dtype = torch.float64
                            )
         data_output_size = params["lstm_hidden_size"][-1]
 
@@ -53,7 +53,8 @@ def build_model(params, device, features=None) -> Sequential:
                                         model_type= params["output_model"],
                                         input_dim= data_output_size+1,
                                         downsampled_input_dim= params["lattice_donwsampled_dim"],
-                                        device= device
+                                        device= device,
+                                        quantile_distribution= params["lattice_quantile"]
         )
         # output_model = ParallelLatticeModel(features=features,
         #                                 output_min=0,
@@ -98,7 +99,7 @@ def build_optimizer(params,model):
     return optimizer
 
 class Output_injector(nn.Module):
-    def __init__(self,  input_size,start_value=1.0):
+    def __init__(self,  input_size,start_value=0.0):
         super(Output_injector, self).__init__()
 
         # self.layer = nn.Linear(input_size+1,1)
@@ -109,4 +110,4 @@ class Output_injector(nn.Module):
         # gate_input = torch.cat([x.clone(),x_input],dim=-1)
         # gate = self.activation(self.layer(gate_input)) + 1.0
         gate = self.parameter
-        return x + (gate *c)
+        return x *gate+ c

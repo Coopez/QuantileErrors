@@ -166,7 +166,7 @@ class NumericalCalibrator(ConstrainedModule):
         else:
             output_init_min, output_init_max = -2.0, 2.0
         self._output_init_min, self._output_init_max = output_init_min, output_init_max
-
+        # input keypoints are the closest values in the feature to the keypoints set up as quantiles. for 2, closest to 0 and 1. So interpolation_keypoints take all of them except the last one 
         self._interpolation_keypoints = torch.from_numpy(input_keypoints[:-1]).to(self.device)
         self._lengths = torch.from_numpy(input_keypoints[1:] - input_keypoints[:-1]).to(self.device)
         if self.input_keypoints_type == InputKeypointsType.LEARNED:

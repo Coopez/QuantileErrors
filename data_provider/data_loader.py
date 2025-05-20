@@ -6,7 +6,7 @@ from torch.utils.data import Dataset
 #from  pytorch_forecasting.data.encoders import TorchNormalizer
 import warnings
 import torch
-from pvlib.irradiance import clearsky_index
+# from pvlib.irradiance import clearsky_index
 
 import sys
 parent_dir = os.path.dirname(os.getcwd())
@@ -480,7 +480,12 @@ def return_cs(loc:str):
     i = int((1/5)*len(cs))
     j = int((2/5)*len(cs))
     day_truth = np.array([i!=0 for i in cs ])
-    cs_train = (cs[j:] - np.mean(cs[j:])) / np.std(cs[j:])
-    cs_valid = (cs[i:j] - np.mean(cs[i:j])) / np.std(cs[i:j])
-    cs_test = (cs[:i]- np.mean(cs[:i])) / np.std(cs[:i])
+    # cs_train = (cs[j:] - np.mean(cs[j:])) / np.std(cs[j:])
+    # cs_valid = (cs[i:j] - np.mean(cs[i:j])) / np.std(cs[i:j])
+    # cs_test = (cs[:i]- np.mean(cs[:i])) / np.std(cs[:i])
+    cs_train = cs[j:]
+    cs_valid = cs[i:j]
+    cs_test = cs[:i]
+
+
     return cs_valid, cs_test, cs_train, [day_truth[i:j],day_truth[:i],day_truth[j:]],{"valid":[np.mean(cs[i:j]),np.std(cs[i:j])], "test":[np.mean(cs[:i]),np.std(cs[:i])], "train":[np.mean(cs[j:]),np.std(cs[j:])]}

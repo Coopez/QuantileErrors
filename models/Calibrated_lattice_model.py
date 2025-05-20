@@ -56,6 +56,7 @@ class CalibratedLatticeModel(nn.Module):
         input_dim: int = 23,
         downsampled_input_dim: int = 13,
         device=None,
+        quantile_distribution: str = "single",
     ) -> None:
         super().__init__()
         self.features = features
@@ -107,6 +108,7 @@ class CalibratedLatticeModel(nn.Module):
                 output_calibration_num_keypoints=output_calibration_num_keypoints,
                 num_keypoints=lattice_keypoints,
                 device=device,
+                quantile_distribution=quantile_distribution,
             )
             
             self.lattice_layers.append(lattice_layer)
@@ -136,6 +138,7 @@ class CalibratedLatticeModel(nn.Module):
                     # output specific parameters
                     output_size=linear_output_size,
                     device=device,
+                    quantile_distribution=quantile_distribution,
                 )
             )
         # self.lattice = nn.Sequential()
