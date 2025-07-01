@@ -30,17 +30,20 @@ def train_model(params,
     if log_neptune:
         run = neptune_run 
         run_name = run["sys/id"].fetch()
+        run["valid/parameters"] = sum(p.numel() for p in model.parameters())
     else:
         run_name = 'local_test_run'
 
     epochs = params['epochs']
     if params['deterministic_optimization']:
         epochs = 1
-    plateau_scheduler = ReduceLROnPlateau(optimizer, 'min', patience=1, factor=0.1)
-    # step_scheduler = MultiStepLR(optimizer, milestones=[3], gamma=0.01)
+    plateau_scheduler = ReduceLROnPlateau(optimizer, 'min', patience=params["scheduler_patience"], factor=params["scheduler_factor"], min_lr=params["scheduler_min_lr"])
+    step_scheduler = MultiStepLR(optimizer, milestones=params["step_scheduler_milestones"], gamma=params["step_scheduler_gamma"])
     plot_ids = sorted(list(set([int(x * (512 / params["batch_size"])) for x in [7,24,14,22,37,8,3]])))
     #26,27,7,24,14,22,37,8,3,4,38 with 512
     #old 122, 128, 136, 131, 184, 124, 278 with 64 
+    epoch_path = params['save_path_model_epoch']
+    early_stopping = ModelCheckpointer(path=epoch_path, tolerance=params['early_stopping_tolerance'], patience=params['early_stopping_patience'])
     for epoch in range(epochs):
         start_time = torch.cuda.Event(enable_timing=True)
         start_time.record()
@@ -50,15 +53,14 @@ def train_model(params,
         model.train()
         for batch in dataloader:
             training_data, target, cs, time_idx = batch
-            if params["inject_persistence"]:
-                pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
-            else:
-                pers = None
+
+            # pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
+
             # 2 quantiles because sharpness loss is logged
-            quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
+            quantile = data.return_quantile(training_data.shape[0],quantile_dim=2,constant=params['constant_quantile'])
             #### Normal Case
                 
-            output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
+            output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
             # Compute loss
             loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
             # debug = Debug_model(model,output,target)
@@ -77,7 +79,7 @@ def train_model(params,
                 if params['loss'] == 'calibration_sharpness_loss':
                     run['train/sharpness'].log(np.mean(sharp_losses))
     
-        epoch_path = params['save_path_model_epoch']
+        
         save_model_per_epoch(run_name, model, epoch_path, epoch, save_all=params['save_all_epochs'])
 
         model.eval()
@@ -96,25 +98,24 @@ def train_model(params,
                     training_data, target,cs, time_idx = batch
                     # batch_var.append([torch.var(target[0]).detach().cpu().numpy(),b_idx])
                     # There is not reason not to already use a quantile range here, as we are not training
-                    if params["inject_persistence"]:
-                        pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
-                        pers_denorm = persistence.forecast_raw(time_idx[:,params["window_size"]]).unsqueeze(-1)
-                    else:
-                        pers = None
-                        pers_denorm = None
+                    # if params["inject_persistence"]:
+                    pers= persistence.forecast(time_idx[:,0]).unsqueeze(-1)
+                    pers_denorm = persistence.forecast_raw(time_idx[:,0]).unsqueeze(-1)
+                    # else:
+                    #     pers = None
+                    #     pers_denorm = None
                     quantile,q_range = data_valid.return_quantile(training_data.shape[0],quantile_dim=params["metrics_quantile_dim"])
 
-                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
-                    # if params['valid_clamp_output']:
-                    #     output = torch.clamp(output,min=0)
+                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
+
 
                     
                     # pers_loss = torch.mean(torch.abs(target - pers)).detach().cpu().numpy().item()
                     # pers_losses.append(pers_loss)
-                    metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range,pers=pers)
+                    metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range,pers=pers_denorm)
 
                     if epoch % params['valid_plots_every'] == 0:
-                        metric_array_dict = metric_plots.accumulate_array_metrics(metric_array_dict,pred = output, truth = target, quantile = q_range,pers = pers) #q_range is just the quantiles in a range arrangement. 
+                        metric_array_dict = metric_plots.accumulate_array_metrics(metric_array_dict,pred = output, truth = target, quantile = q_range,pers = pers_denorm) #q_range is just the quantiles in a range arrangement. 
                         if b_idx in plot_ids and sample_counter != params["valid_plots_sample_size"]+1:
                             metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[time_idx.detach().cpu().numpy()],sample_num = sample_counter, neptune_run=neptune_run)
                             sample_counter += 1
@@ -122,21 +123,7 @@ def train_model(params,
             if epoch % params['valid_plots_every'] == 0:
                 metric_plots.generate_metric_plots(metric_array_dict,neptune_run=neptune_run, dataloader_length=len(dataloader_valid))
 
-                
-
-                    
-                    
-                
-                # metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[idx.detach().cpu().numpy()], neptune_run=neptune_run)
-            # if log_neptune:
-            #     #log all metrics in metric_dict to neptune
-            #     for key, value in metric_dict.items():
-            #         # test if value is a list 
-            #         if isinstance(value[0], np.ndarray): # need to check if in the list of batch accumulated values we have an array
-            #                 value = np.stack(value,axis=-1).mean(axis=-1).tolist()
-            #                 run['valid/'+key].log(stringify_unsupported(value))
-            #         else:
-            #             run['valid/'+key].log(np.mean(value))
+            
         
         end_time.record()
         torch.cuda.synchronize() 
@@ -145,8 +132,15 @@ def train_model(params,
         if params['loss']== 'calibration_sharpness_loss':
             step_meta["Sharpness"] = np.mean(sharp_losses)
         scheduler_metrics = metric.summarize_metrics({**step_meta, **metric_dict},neptune = log_neptune,neptune_run=neptune_run)
-        plateau_scheduler.step(scheduler_metrics["CRPS"])
+        if params["scheduler_enable"]:
+            plateau_scheduler.step(scheduler_metrics["CRPS"])
+        if params["step_scheduler_enable"]:
+            step_scheduler.step()
+        # print("Current Learning Rate: ", plateau_scheduler.get_last_lr())
         # step_scheduler.step(epoch=epoch)
+        # break_condition, model = early_stopping(model, scheduler_metrics["CRPS"])
+        # if break_condition is False:
+        #     break
     return model
 
 
@@ -188,6 +182,36 @@ def save_model_per_epoch(run_name, model: torch.nn.Module, path:str, epoch:int, 
     else:
         torch.save(model.state_dict(), path+f"{run_name}.pt")
     
+class ModelCheckpointer():
+    def __init__(self, path:str,tolerance:float=0.0001, patience:int=5):
+        self.path = path
+        self.last_metric = 9999.0
+        self.counter = 0
+        self.tolerance = tolerance
+        self.patience = patience
+    def __call__(self,  model: torch.nn.Module, metric):
+        """
+        Checks if the metric has improved and saves the model if it has.
+        If the metric has not improved for a certain number of epochs, it stops training.
+        """
+        if metric < (self.last_metric - self.tolerance):
+            self._save(model)
+            self.last_metric = metric
+            self.counter = 0
+            return True, model
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                print(f"Stopping training after {self.counter} epochs without improvement.")
+                model = self._load(model)
+                return False, model
+        return True, model
+    def _save(self, model: torch.nn.Module):
+        torch.save(model.state_dict(), self.path+"checkpoint_model.pt")
+    def _load(self,model: torch.nn.Module):
+        model.load_state_dict(torch.load(self.path+"checkpoint_model.pt"))
+        return model
+
 
 def generate_validation_plots(x,y):
     pass #TODO

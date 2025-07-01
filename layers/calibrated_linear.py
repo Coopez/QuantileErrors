@@ -84,7 +84,7 @@ class Linear(ConstrainedModule):
         self.use_bias = use_bias if not weighted_average else False
         self.weighted_average = weighted_average
 
-        self.kernel = torch.nn.Parameter(torch.empty((input_dim, output_dim), dtype=torch.float64),requires_grad=True)
+        self.kernel = torch.nn.Parameter(torch.empty((input_dim, output_dim), dtype=torch.float32),requires_grad=True)
         # torch.nn.init.uniform_(self.kernel, a=0.0, b=1.0)
         torch.nn.init.xavier_uniform_(self.kernel)
         # torch.nn.init.constant_(self.kernel, 1.0 / input_dim)
@@ -103,7 +103,7 @@ class Linear(ConstrainedModule):
         Returns:
             torch.Tensor of shape `(batch_size, 1)` containing transformed input values.
         """
-        # x = x.to(torch.float32)
+        x = x.to(torch.float32) # lattice internal initialization requires float64, but everything else is float32... 
         result = torch.matmul(x, self.kernel)
         if self.use_bias:
             result += self.bias

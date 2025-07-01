@@ -9,7 +9,7 @@ from neptune.types import File
 
 
 class MetricPlots:
-    def __init__(self, params, normalizer, sample_size=1, log_neptune=False,trial_num = 1,fox=False):
+    def __init__(self, params, normalizer, sample_size=1, log_neptune=False,trial_num = 1,fox=False,persistence=None):
         self.params = params
         self.sample_size = sample_size
         self.log_neptune = log_neptune
@@ -19,6 +19,7 @@ class MetricPlots:
         self.range_dict = {"PICP": None, "PINAW": None, "Cali_PICP": None}
         self.trial_num = trial_num
         self.FOX = fox
+        self.persistence = persistence
         seaborn_style = "whitegrid"
         sns.set_theme(style=seaborn_style, palette="colorblind")
     def accumulate_array_metrics(self,metrics,pred,truth,quantile,pers):
@@ -27,19 +28,19 @@ class MetricPlots:
         pinaw, pinaw_interval =PINAW(pred,truth,quantiles=quantile, return_counts=False,return_array=True)
         picp_c, picp_c_quantiles = PICP_quantile(pred,truth,quantiles=quantile, return_counts=False,return_array=True)   
         corrs = error_uncertainty(pred,truth)
-        # ss_score = Skill_score(truth = truth, y = pred[...,midpoint].unsqueeze(-1),p = pers)
-        # ss = ss_score.evaluate_timestep().squeeze().detach().cpu().numpy()
+        ss_score = Skill_score(truth = truth, y = pred[...,midpoint].unsqueeze(-1),p = pers)
+        ss = ss_score.evaluate_timestep().squeeze().detach().cpu().numpy()
         if self.range_dict["PICP"] is None:
             self.range_dict["PICP"] = picp_interval
             self.range_dict["PINAW"] = pinaw_interval
             self.range_dict["Cali_PICP"] = picp_c_quantiles
             self.range_dict["Correlation"] = range(corrs.shape[0])
-            # self.range_dict["SkillScore"] = range(ss.shape[0])
+            self.range_dict["SkillScore"] = range(ss.shape[0])
         metrics["PICP"].append(picp)
         metrics["PINAW"].append(pinaw)
         metrics["Cali_PICP"].append(picp_c)
         metrics["Correlation"].append(corrs.tolist())
-        # metrics["SkillScore"].append(ss.tolist())
+        metrics["SkillScore"].append(ss.tolist())
 
         return metrics
     """
@@ -60,7 +61,7 @@ class MetricPlots:
         summary["Cali_PICP"] = np.mean(np.array(metrics["Cali_PICP"]),axis = 0)
         summary["Correlation"] = np.mean(np.array(metrics["Correlation"]),axis = 0)
         summary["Correlation"]= np.stack((summary["Correlation"],np.std(np.array(metrics["Correlation"]),axis = 0)))
-        # summary["SkillScore"] = np.mean(np.array(metrics["SkillScore"]),axis = 0)
+        summary["SkillScore"] = np.mean(np.array(metrics["SkillScore"]),axis = 0)
         return summary
 
     
@@ -167,10 +168,12 @@ class MetricPlots:
         plt.ioff()
         plt.figure(figsize=(10, 4))
         colors = sns.color_palette("colorblind")
-        plt.plot(time[x_idx], data[:,0], label='Input Data', color=colors[0])
+        plt.plot(time[x_idx], data[:,11], label='Input Data', color=colors[0])
         plt.plot(time[y_idx], truth[:,0], label='Ground Truth', color=colors[2])
         plt.plot(time[y_idx], pred[:,pred_idx], label='Prediction', linestyle='--', color=colors[1])
-        plt.fill_between(time[y_idx], pred[:, 0], pred[:, -1], alpha=0.2, label='Prediction Interval', color=colors[1])
+        plt.fill_between(time[y_idx], pred[:, 0], pred[:, -1], alpha=0.1, label='Prediction Interval', color=colors[1])
+        for i in range(1,pred_idx):
+            plt.fill_between(time[y_idx], pred[:, i], pred[:, -1-i], alpha=0.1, color=colors[1])
         plt.xlabel('Time (DD HH:MM)')
         plt.ylabel('GHI (W/m^2)')
         plt.legend()

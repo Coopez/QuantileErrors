@@ -10,7 +10,7 @@ class Neural_Net_with_Quantile(nn.Module):
         """
 
         self._layers = nn.ModuleList()
-        self._activation = nn.ReLU() if activation == "relu" else nn.Sigmoid
+        self._activation = nn.ReLU() if activation == "relu" else nn.Tanh()
         for i in range(num_layers):
             self._layers.append(nn.Linear(input_size, input_size))
         self._layers.append(nn.Linear(input_size, output_size))

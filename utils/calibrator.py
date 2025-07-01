@@ -200,7 +200,7 @@ class NumericalCalibrator(ConstrainedModule):
                 heights = -heights
             else:
                 bias = torch.tensor([[self._output_init_min]])
-            return torch.cat((bias, heights), 0).double()
+            return torch.cat((bias, heights), 0)#.double()
 
         self.kernel = torch.nn.Parameter(initialize_kernel())
 

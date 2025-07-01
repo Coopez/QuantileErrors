@@ -28,11 +28,11 @@ def return_features(quantiles:np.ndarray,params:dict,data:np.ndarray = None):
         amount = params['dnn_hidden_size'][-1]
     else:
         amount = data_features
-    data = np.random.uniform(0, 1, (quantiles.shape[0], amount)) if data is None else data
+    data = np.random.uniform(0, 1, (quantiles.shape[0], amount)) if data is None else data #.astype('f')
     
     for i in range(amount):
         features.append(NumericalFeature(f"feature_{i}", data[...,i], num_keypoints=params['lattice_calibration_num_keypoints']))
-    features.append(NumericalFeature(f"quantiles_0", quantiles[...,0], num_keypoints=params['lattice_calibration_num_keypoints'], monotonicity=Monotonicity.INCREASING))
+    features.append(NumericalFeature(f"quantiles_0", quantiles[...,0], num_keypoints=params['lattice_calibration_num_keypoints_quantile'], monotonicity=Monotonicity.INCREASING))
     return features
 
 # def return_features(params:dict, data_source: str, feature_length:int, column_names: list = None):

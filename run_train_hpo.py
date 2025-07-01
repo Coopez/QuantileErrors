@@ -30,14 +30,15 @@ from losses.qr_loss import sharpness_loss
 import numpy as np
 from neptune.utils import stringify_unsupported
 import neptune.integrations.optuna as optuna_utils
-from models.persistence_model import Persistence_Model
+from models.smart_day_persistence import sPersistence_Forecast
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 CHECKPOINT_DIR = "optuna_checkpoint"
 
 base_path = "./artifacts"
 os.makedirs(base_path, exist_ok=True)
 artifact_store = FileSystemArtifactStore(base_path=base_path)
-RUN_NAME = "HO_LSTM_LINEAR-0" # 2
+RUN_NAME = "HO_SMNN_8" # 2
 
 """
 We already had:
@@ -49,18 +50,33 @@ HPO is the old name. We are going with HO now
 def objective(trial):
     print(f"STUDY: Starting trial: {trial.number}")
     ##### HPO Logic #####
-    hpo_hidden_size = trial.suggest_categorical("hidden_size", params["hpo_hidden_size"])
-    hpo_num_layers = trial.suggest_categorical("num_layers", params["hpo_num_layers"])
-    params["learning_rate"] = trial.suggest_categorical("learning_rate", params["hpo_lr"])
-    # params["batch_size"] = trial.suggest_categorical("batch_size", params["hpo_batch_size"])
-    # params["window_size"] = trial.suggest_categorical("window_size", params["hpo_window_size"])
+    # hpo_hidden_size = trial.suggest_categorical("hidden_size", params["hpo_hidden_size"])
+    # hpo_num_layers = trial.suggest_categorical("num_layers", params["hpo_num_layers"])
+    # params["learning_rate"] = trial.suggest_categorical("learning_rate", params["hpo_lr"])
+    # # params["batch_size"] = trial.suggest_categorical("batch_size", params["hpo_batch_size"])
+    # # params["window_size"] = trial.suggest_categorical("window_size", params["hpo_window_size"])
 
-    if params["input_model"] == 'lstm':
-        params['lstm_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
-        params['lstm_num_layers'] = hpo_num_layers
-    if params["input_model"] == 'dnn':
-        params['dnn_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
-        params['dnn_num_layers'] = hpo_num_layers
+    # if params["input_model"] == 'lstm':
+    #     params['lstm_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
+    #     params['lstm_num_layers'] = hpo_num_layers
+    # if params["input_model"] == 'dnn':
+    #     params['dnn_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
+    #     params['dnn_num_layers'] = hpo_num_layers
+
+    #smnn stuff
+
+    hpo_smnn_exp_1 = trial.suggest_categorical("smnn_exp_1", params["hpo_smnn_exp_1"])
+    hpo_smnn_exp_2 = trial.suggest_categorical("smnn_exp_2", params["hpo_smnn_exp_2"])
+    hpo_smnn_relu_1 = trial.suggest_categorical("smnn_relu_1", params["hpo_smnn_relu_1"])
+    hpo_smnn_relu_2 = trial.suggest_categorical("smnn_relu_2", params["hpo_smnn_relu_2"])
+    hpo_smnn_conf_1 = trial.suggest_categorical("smnn_conf_1", params["hpo_smnn_conf_1"])
+    hpo_smnn_conf_2 = trial.suggest_categorical("smnn_conf_2", params["hpo_smnn_conf_2"])
+
+    params["smnn_exp"] = (hpo_smnn_exp_1, hpo_smnn_exp_2)
+    params["smnn_relu"] = (hpo_smnn_relu_1, hpo_smnn_relu_2)
+    params["smnn_conf"] = (hpo_smnn_conf_1, hpo_smnn_conf_2)
+
+
 
     # disable plotting
     params['valid_plots_every'] = 900000
@@ -76,7 +92,7 @@ def objective(trial):
     device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
 
     # pytorch random seed
-    torch.manual_seed(params['random_seed'])
+    torch.manual_seed(params['random_seed'][0])
 
     if _LOG_NEPTUNE:
         run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
@@ -133,7 +149,7 @@ def objective(trial):
     metric_plots = MetricPlots(params,Normalizer,sample_size=params["valid_plots_sample_size"],log_neptune=_LOG_NEPTUNE,trial_num=trial.number)
     optimizer = build_optimizer(params, model)
 
-    persistence = Persistence_Model(Normalizer,params)
+    persistence = sPersistence_Forecast(Normalizer,params)
     final_loss = train_model(params = params,
                     model = model,
                     optimizer = optimizer,
@@ -155,12 +171,14 @@ def objective(trial):
     return final_loss
 
 
-def return_loss(metrics):
+def return_loss(metrics, compount=True):
     for metric, value in metrics.items():
             metrics[metric] = np.mean(value)
-    metrics["optuna_loss"] = metrics["CRPS"] + metrics["ACE"] * metrics["CRPS"]
-    return metrics # ace has to be scaled by crps to be comparable
-
+    if compount:
+        metrics["optuna_loss"] = metrics["ACE"]#metrics["CRPS"] + metrics["ACE"] * metrics["CRPS"]
+    else:
+        metrics["optuna_loss"] = metrics["CRPS"]
+    return metrics 
 # Training loop
 
 
@@ -187,6 +205,7 @@ def train_model(params,
     run["status/trial"] = trial.number
     device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
     last_checkpoint = trial.user_attrs.get("last_checkpoint", False)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=params["scheduler_patience"], factor=params["scheduler_factor"], min_lr=params["scheduler_min_lr"])
     epoch_begin = 0
     if last_checkpoint:
         if os.path.exists(f"./tmp/tmp_model_{last_checkpoint}.pt"):
@@ -202,54 +221,42 @@ def train_model(params,
 
 
     epochs = params['epochs']
-    if params['deterministic_optimization']:
-        epochs = 1
-    plot_ids = sorted(list(set([int(x * (64 / params["batch_size"])) for x in [122, 128, 136, 131, 184, 124, 278]])))
+    plot_ids = sorted(list(set([int(x * (512 / params["batch_size"])) for x in [7,24,14,22,37,8,3]])))
     min_loss = 1000.0
-    for epoch in tqdm(range(epoch_begin,epochs), 
-                  desc="Current Trial Progress", 
-                  bar_format="{l_bar}{bar} Epoch {n_fmt}/{total_fmt} [{rate_fmt}]"):
-        start_time = torch.cuda.Event(enable_timing=True)
-        start_time.record()
-        end_time = torch.cuda.Event(enable_timing=True)
-        train_losses = []
-        sharp_losses = []
+    for epoch in range(epoch_begin,epochs):
         model.train()
         for batch in dataloader:
-            training_data, target, cs, _ = batch
+            training_data, target, cs, time_idx = batch
              # 2 quantiles because sharpness loss is logged
             training_data, target,cs = training_data.to(device), target.to(device), cs.to(device)
-            if params['deterministic_optimization']:
-                def closure():
-                    optimizer.zero_grad()
-                    quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
-                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],mode='train')
-                    loss = criterion(output, target, quantile.unsqueeze(-1))
-                    #loss.backward()
-                    return loss
-                optimizer.step(closure)
-            else:
-                
-                quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
-                quantile = quantile.to(device)
-                output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
-                # Compute loss
-                loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
+            # if params["inject_persistence"]:
+            #     pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
+            # else:
+            #     pers = None    
 
-                #Backward pass and optimization
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                # train_losses.append(loss.item())
+            quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
+            quantile = quantile.to(device) # this line may be unnecessary, but it is not a problem to have it here.
 
-                # with torch.no_grad():
-                #     sharpness = sharpness_loss(output,quantile,scale_sharpness_scale=params['loss_calibration_scale_sharpness'])
-                #     sharp_losses.append(sharpness.item())
-                # if log_neptune:
-                #     run['train/'+params['loss']].log(np.mean(train_losses))
-                #     if params['loss'] == 'calibration_sharpness_loss':
-                #         run['train/sharpness'].log(np.mean(sharp_losses))
-        
+
+
+            output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
+            # Compute loss
+            loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
+
+            #Backward pass and optimization
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            # train_losses.append(loss.item())
+
+            # with torch.no_grad():
+            #     sharpness = sharpness_loss(output,quantile,scale_sharpness_scale=params['loss_calibration_scale_sharpness'])
+            #     sharp_losses.append(sharpness.item())
+            # if log_neptune:
+            #     run['train/'+params['loss']].log(np.mean(train_losses))
+            #     if params['loss'] == 'calibration_sharpness_loss':
+            #         run['train/sharpness'].log(np.mean(sharp_losses))
+    
         model.eval()
         
         if epoch % params['valid_metrics_every'] == 0:
@@ -257,39 +264,35 @@ def train_model(params,
             sample_counter = 1
             with torch.no_grad():
                 for b_idx,batch in enumerate(dataloader_valid):
-                    training_data, target,cs, time_idx= batch
+                    training_data, target,cs, time_idx = batch
                     training_data, target,cs = training_data.to(device), target.to(device), cs.to(device)
                     # There is not reason not to already use a quantile range here, as we are not training
-                    if params["inject_persistence"]:
-                        pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
-                    else:
-                        pers = None
+                    pers= persistence.forecast(time_idx[:,0]).unsqueeze(-1)
+                    pers_denorm = persistence.forecast_raw(time_idx[:,0]).unsqueeze(-1)
                     quantile,q_range = data_valid.return_quantile(training_data.shape[0],quantile_dim=params["metrics_quantile_dim"])
                     quantile, q_range = quantile.to(device), q_range.to(device)
                     output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
                     # if params['valid_clamp_output']:
                     #     output = torch.clamp(output,min=0)
                     
-                    metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range)
+                    metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range,pers=pers_denorm)
                     if epoch == params['epochs'] - 1:
                         # metric_array_dict = metric_plots.accumulate_array_metrics(metric_array_dict,pred = output, truth = target, quantile = q_range) #q_range is just the quantiles in a range arrangement. 
                         if b_idx in plot_ids and sample_counter != params["valid_plots_sample_size"]:
-                            metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[idx.detach().cpu().numpy()],sample_num = sample_counter, neptune_run=neptune_run)
+                            metric_plots.generate_result_plots(training_data,output, target, quantile, cs, overall_time[time_idx.detach().cpu().numpy()],sample_num = sample_counter, neptune_run=neptune_run)
                             sample_counter += 1
 
 
-        end_time.record()
-        torch.cuda.synchronize() 
-        epoch_time = start_time.elapsed_time(end_time)/ 1000 
         report_metrics = return_loss(metric_dict)
+        if params["scheduler_enable"]:
+            scheduler.step(report_metrics["CRPS"])
         trial.report(report_metrics["optuna_loss"],epoch)
-        run["status/epoch_time"] = epoch_time
-        run["status/epoch"] = epoch
+        # run["status/epoch_time"] = epoch_time
+        # run["status/epoch"] = epoch
 
-        min_loss = report_metrics["optuna_loss"] if report_metrics["optuna_loss"] < min_loss else min_loss
+        # min_loss = report_metrics["optuna_loss"] if report_metrics["optuna_loss"] < min_loss else min_loss
+        min_loss = report_metrics["optuna_loss"]
         run[f"trials/{trial.number}/best_value"] = report_metrics["optuna_loss"]
-
-        # print(f"Saving a checkpoint in epoch {epoch}.")
 
         torch.save(
             {
@@ -359,7 +362,7 @@ if __name__ == "__main__":
 
     
     # pytorch random seed
-    torch.manual_seed(params['random_seed'])
+    torch.manual_seed(params['random_seed'][0])
 
     neptune_callback = optuna_utils.NeptuneCallback(run,plots_update_freq=1,log_all_trials=False)
 
@@ -370,10 +373,19 @@ if __name__ == "__main__":
     storage_name = "sqlite:///{}.db".format(study_name)
 
     
+    # search_space = {
+    #     "hidden_size": params["hpo_hidden_size"],
+    #     "num_layers": params["hpo_num_layers"],
+    #     "learning_rate": params["hpo_lr"]
+    # }
+    
     search_space = {
-        "hidden_size": params["hpo_hidden_size"],
-        "num_layers": params["hpo_num_layers"],
-        "learning_rate": params["hpo_lr"]
+        "smnn_exp_1": params["hpo_smnn_exp_1"],
+        "smnn_exp_2": params["hpo_smnn_exp_2"],
+        "smnn_relu_1": params["hpo_smnn_relu_1"],
+        "smnn_relu_2": params["hpo_smnn_relu_2"],
+        "smnn_conf_1": params["hpo_smnn_conf_1"],
+        "smnn_conf_2": params["hpo_smnn_conf_2"]
     }
     sampler = optuna.samplers.GridSampler(search_space)
     
@@ -396,7 +408,7 @@ if __name__ == "__main__":
     #     study.enqueue_trial(study.trials[-1].params,user_attrs={"last_checkpoint":idx})
     #     print("RESTORATOR: Continuing unfinished trial.")
     #     study.optimize(objective, n_trials=1,callbacks=[neptune_callback])
-    study.optimize(objective, n_trials=1,callbacks=[neptune_callback],show_progress_bar=False)
+    study.optimize(objective, n_trials=5,callbacks=[neptune_callback],show_progress_bar=False)
 
     run.stop()
 

@@ -24,7 +24,8 @@ from losses.qr_loss import sharpness_loss
 import numpy as np
 from neptune.utils import stringify_unsupported
 import neptune.integrations.optuna as optuna_utils
-from models.persistence_model import Persistence_Model
+# from models.persistence_model import Persistence_Model
+from models.smart_day_persistence import sPersistence_Forecast
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 CHECKPOINT_DIR = "optuna_checkpoint"
@@ -33,7 +34,7 @@ CHECKPOINT_DIR = "optuna_checkpoint"
 BASE_PATH = os.environ['SLURM_SUBMIT_DIR']
 os.makedirs(BASE_PATH, exist_ok=True)
 
-RUN_NAME = "HO_DNN_LINEAR-0" 
+RUN_NAME = "HO_SMNN_8" # "HO_LSTM_LINEAR" # "HO_LSTM_DNN" # "HO_DNN_LINEAR" # "HO_QLATTICE" # "HO_LSTM_CONSTRAINED_LINEAR"
 
 """
 We already had:
@@ -43,28 +44,67 @@ LSTM_LINEAR-1 - run with scheduler tuned to ACE.
 LSTM_LINEAR-2 - run with scheduler tuned to CRPS.
 LSTM_LINEAR-3 - testing larger hidden size up to 256
 
+LSTM_LINEAR- 6 - ACE
+LSTM_LINEAR- 7 - CRPS
+
 LSTM_DNN-0 - run with scheduler tuned to CRPS.
 LSTM_DNN-1 - testing larger hidden size up to 256
+LSTM_DNN-2 - 
+LSTM_DNN-3 - 
+LSTM_DNN-4 - ACe
+LSTM_DNN-5 - crps
+
+LSTM_CONSTRAINED_LINEAR-0 - ACE
+LSTM_CONSTRAINED_LINEAR-1 - CRPS
 
 
 DNN_LINEAR-0 - initial run with up to 4 layers and 128 ns
+
+QLATTICE-0 - initial run. with only ACE - botched. Ran with dnn
+QLATTICE-1 - initial run. with only CRPS - botched. Ran with dnn
+QLATTICE-2 - initial run. with only ACE
+QLATTICE-3 - initial run. with only CRPS
+QLATTICE-4 - SCRAPED RUN
+QLATTICE-5 - only CRPS, more parameter settings
+QLATTICE-6 - only ACE, more parameter settings
+QLATTICE-7 - only Ace, even more parameter settings,
+QLATTICE-8 - only crps, even more parameter settings, 
 
 """
 
 def objective(trial):
     print(f"STUDY: Starting trial: {trial.number}")
-    ##### HPO Logic #####
-    hpo_hidden_size = trial.suggest_categorical("hidden_size", params["hpo_hidden_size"])
-    hpo_num_layers = trial.suggest_categorical("num_layers", params["hpo_num_layers"])
-    params["learning_rate"] = trial.suggest_categorical("learning_rate", params["hpo_lr"])
-    # params["window_size"] = trial.suggest_categorical("window_size", params["hpo_window_size"])
+    #### HPO Logic #####
+    # hpo_hidden_size = trial.suggest_categorical("hidden_size", params["hpo_hidden_size"])
+    # hpo_num_layers = trial.suggest_categorical("num_layers", params["hpo_num_layers"])
+    # params["learning_rate"] = trial.suggest_categorical("learning_rate", params["hpo_lr"])
+    # # params["window_size"] = trial.suggest_categorical("window_size", params["hpo_window_size"])
 
-    if params["input_model"] == 'lstm':
-        params['lstm_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
-        params['lstm_num_layers'] = hpo_num_layers
-    if params["input_model"] == 'dnn':
-        params['dnn_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
-        params['dnn_num_layers'] = hpo_num_layers
+    # if params["input_model"] == 'lstm':
+    #     params['lstm_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
+    #     params['lstm_num_layers'] = hpo_num_layers
+    # if params["input_model"] == 'dnn':
+    #     params['dnn_hidden_size'] = [hpo_hidden_size] * hpo_num_layers
+    #     params['dnn_num_layers'] = hpo_num_layers
+    # params["lattice_dim_input"] = trial.suggest_categorical("lattice_dim_input", params["hpo_lattice_dim_input"])
+    # params["lattice_num_keypoints"] = trial.suggest_categorical("lattice_keypoints", params["hpo_lattice_keypoints"])
+    # params["lattice_calibration_num_keypoints"] = trial.suggest_categorical("calibration_keypoints", params["hpo_calibration_keypoints"])
+    # params["lattice_calibration_num_keypoints_quantile"] = trial.suggest_categorical("calibration_keypoints_quantile", params["hpo_calibration_keypoints_quantile"])    
+
+    #smnn stuff
+
+    hpo_smnn_exp_1 = trial.suggest_categorical("smnn_exp_1", params["hpo_smnn_exp_1"])
+    hpo_smnn_exp_2 = trial.suggest_categorical("smnn_exp_2", params["hpo_smnn_exp_2"])
+    hpo_smnn_relu_1 = trial.suggest_categorical("smnn_relu_1", params["hpo_smnn_relu_1"])
+    hpo_smnn_relu_2 = trial.suggest_categorical("smnn_relu_2", params["hpo_smnn_relu_2"])
+    hpo_smnn_conf_1 = trial.suggest_categorical("smnn_conf_1", params["hpo_smnn_conf_1"])
+    hpo_smnn_conf_2 = trial.suggest_categorical("smnn_conf_2", params["hpo_smnn_conf_2"])
+
+    params["smnn_exp"] = (hpo_smnn_exp_1, hpo_smnn_exp_2)
+    params["smnn_relu"] = (hpo_smnn_relu_1, hpo_smnn_relu_2)
+    params["smnn_conf"] = (hpo_smnn_conf_1, hpo_smnn_conf_2)
+
+
 
     # disable plotting
     params['valid_plots_every'] = 900000
@@ -80,13 +120,13 @@ def objective(trial):
     device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
     print(f"STUDY: Using device: {device}")
     # pytorch random seed
-    torch.manual_seed(params['random_seed'])
-
+    torch.manual_seed(params['random_seed'][0])
+    np.random.seed(params['random_seed'][0])
     if _LOG_NEPTUNE:
         run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
 
     if _DATA_DESCRIPTION ==  "Station 11 Irradiance Sunpoint":
-        train,train_target,valid,valid_target,_,test_target= data_import() #dtype="float64"
+        train,train_target,valid,valid_target,_,test_target= data_import()
         _loc_data = os.getcwd()
         cs_valid, cs_test, cs_train, day_mask,cs_de_norm = return_cs(os.path.join(_loc_data,"data"))
 
@@ -130,11 +170,11 @@ def objective(trial):
         run['model_summary'] = str(model)
 
     criterion = SQR_loss(type=params['loss'], lambda_=params['loss_calibration_lambda'], scale_sharpness=params['loss_calibration_scale_sharpness'])
+    persistence = sPersistence_Forecast(Normalizer,params)
     metric = Metrics(params,Normalizer,_DATA_DESCRIPTION)
     metric_plots = MetricPlots(params,Normalizer,sample_size=params["valid_plots_sample_size"],log_neptune=_LOG_NEPTUNE,trial_num=trial.number)
     optimizer = build_optimizer(params, model)
 
-    persistence = Persistence_Model(Normalizer,params)
     final_loss = train_model(params = params,
                     model = model,
                     optimizer = optimizer,
@@ -160,7 +200,7 @@ def return_loss(metrics, compount=True):
     for metric, value in metrics.items():
             metrics[metric] = np.mean(value)
     if compount:
-        metrics["optuna_loss"] = metrics["CRPS"] + metrics["ACE"] * metrics["CRPS"]
+        metrics["optuna_loss"] = metrics["ACE"]#metrics["CRPS"] + metrics["ACE"] * metrics["CRPS"]
     else:
         metrics["optuna_loss"] = metrics["CRPS"]
     return metrics 
@@ -191,7 +231,7 @@ def train_model(params,
     run["status/trial"] = trial.number
     device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
     last_checkpoint = trial.user_attrs.get("last_checkpoint", False)
-    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.1)
+    scheduler = ReduceLROnPlateau(optimizer, 'min', patience=params["scheduler_patience"], factor=params["scheduler_factor"], min_lr=params["scheduler_min_lr"])
     epoch_begin = 0
     if last_checkpoint:
         if os.path.exists(f"./tmp/tmp_model_{last_checkpoint}.pt"):
@@ -217,16 +257,17 @@ def train_model(params,
             training_data, target, cs, time_idx = batch
              # 2 quantiles because sharpness loss is logged
             training_data, target,cs = training_data.to(device), target.to(device), cs.to(device)
-            if params["inject_persistence"]:
-                pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
-            else:
-                pers = None    
+            # if params["inject_persistence"]:
+            #     pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
+            # else:
+            #     pers = None    
+
             quantile = data.return_quantile(training_data.shape[0],quantile_dim=2)
             quantile = quantile.to(device) # this line may be unnecessary, but it is not a problem to have it here.
 
 
 
-            output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
+            output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
             # Compute loss
             loss = criterion(output, target, quantile) #TODO criterion should be able to handle quantile dim
 
@@ -254,17 +295,15 @@ def train_model(params,
                     training_data, target,cs, time_idx = batch
                     training_data, target,cs = training_data.to(device), target.to(device), cs.to(device)
                     # There is not reason not to already use a quantile range here, as we are not training
-                    if params["inject_persistence"]:
-                        pers= persistence.forecast(time_idx[:,params["window_size"]]).unsqueeze(-1)
-                    else:
-                        pers = None
+                    pers= persistence.forecast(time_idx[:,0]).unsqueeze(-1)
+                    pers_denorm = persistence.forecast_raw(time_idx[:,0]).unsqueeze(-1)
                     quantile,q_range = data_valid.return_quantile(training_data.shape[0],quantile_dim=params["metrics_quantile_dim"])
                     quantile, q_range = quantile.to(device), q_range.to(device)
-                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1],persistence=pers)
+                    output = forward_pass(params,model,training_data,quantile,quantile_dim=quantile.shape[-1])
                     # if params['valid_clamp_output']:
                     #     output = torch.clamp(output,min=0)
                     
-                    metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range)
+                    metric_dict= metric(pred = output, truth = target, quantile = quantile, cs = cs, metric_dict=metric_dict,q_range=q_range,pers=pers_denorm)
                     if epoch == params['epochs'] - 1:
                         # metric_array_dict = metric_plots.accumulate_array_metrics(metric_array_dict,pred = output, truth = target, quantile = q_range) #q_range is just the quantiles in a range arrangement. 
                         if b_idx in plot_ids and sample_counter != params["valid_plots_sample_size"]:
@@ -273,7 +312,8 @@ def train_model(params,
 
 
         report_metrics = return_loss(metric_dict)
-        scheduler.step(report_metrics["CRPS"])
+        if params["scheduler_enable"]:
+            scheduler.step(report_metrics["CRPS"])
         trial.report(report_metrics["optuna_loss"],epoch)
         # run["status/epoch_time"] = epoch_time
         # run["status/epoch"] = epoch
@@ -353,7 +393,7 @@ if __name__ == "__main__":
 
     
     # pytorch random seed
-    torch.manual_seed(params['random_seed'])
+    torch.manual_seed(params['random_seed'][0])
 
     neptune_callback = optuna_utils.NeptuneCallback(run,plots_update_freq=1,log_all_trials=False)
 
@@ -364,10 +404,26 @@ if __name__ == "__main__":
     storage_name = "sqlite:///{}.db".format(storage_path)
 
 
+    # search_space = {
+    #     "hidden_size": params["hpo_hidden_size"],
+    #     "num_layers": params["hpo_num_layers"],
+    #     "learning_rate": params["hpo_lr"]
+    # }
+    # search_space = {
+    #     "lattice_dim_input": params["hpo_lattice_dim_input"],
+    #     "lattice_keypoints": params["hpo_lattice_keypoints"],
+    #     "calibration_keypoints": params["hpo_calibration_keypoints"],
+    #     "calibration_keypoints_quantile": params["hpo_calibration_keypoints_quantile"]
+    # }
+
+
     search_space = {
-        "hidden_size": params["hpo_hidden_size"],
-        "num_layers": params["hpo_num_layers"],
-        "learning_rate": params["hpo_lr"]
+        "smnn_exp_1": params["hpo_smnn_exp_1"],
+        "smnn_exp_2": params["hpo_smnn_exp_2"],
+        "smnn_relu_1": params["hpo_smnn_relu_1"],
+        "smnn_relu_2": params["hpo_smnn_relu_2"],
+        "smnn_conf_1": params["hpo_smnn_conf_1"],
+        "smnn_conf_2": params["hpo_smnn_conf_2"]
     }
     sampler = optuna.samplers.GridSampler(search_space)
     
@@ -390,7 +446,7 @@ if __name__ == "__main__":
     #     study.enqueue_trial(study.trials[-1].params,user_attrs={"last_checkpoint":idx})
     #     print("RESTORATOR: Continuing unfinished trial.")
     #     study.optimize(objective, n_trials=1,callbacks=[neptune_callback])
-    study.optimize(objective, n_trials=35,callbacks=[neptune_callback],show_progress_bar=False)
+    study.optimize(objective, n_trials=1000,callbacks=[neptune_callback],show_progress_bar=False)
 
     run.stop()
 

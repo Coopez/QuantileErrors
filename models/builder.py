@@ -7,7 +7,7 @@ from .Calibrated_lattice_model import CalibratedLatticeModel
 from .Parallel_lattice_model import ParallelLatticeModel
 from .DNN_out_model import Neural_Net_with_Quantile
 import torch.nn as nn
-
+from .SMNN import ScalableMonotonicNeuralNetwork
 def build_model(params, device, features=None) -> Sequential:
     
     if params["input_model"] == "lstm":
@@ -68,6 +68,16 @@ def build_model(params, device, features=None) -> Sequential:
         #                                 downsampled_input_dim=params["lattice_donwsampled_dim"],
         #                                 device=device
         #                                 )
+    elif params["output_model"] == "smnn":
+        output_model = ScalableMonotonicNeuralNetwork(
+            input_size=data_output_size+1,
+            mono_size = 1,
+            output_size=params["horizon_size"],
+            exp_unit_size = params["smnn_exp"],
+            relu_unit_size = params["smnn_relu"],
+            conf_unit_size = params["smnn_conf"],
+                   )
+        
     else:
         raise ValueError("Output_Model not implemented")
  

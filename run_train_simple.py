@@ -18,11 +18,12 @@ from utils.helper_func import generate_surrogate_quantiles, return_features, ret
 from config import _LOG_NEPTUNE, _VERBOSE, params, _DATA_DESCRIPTION
 from models.builder import build_model, build_optimizer
 from training.train_loop import train_model
-from models.persistence_model import Persistence_Model
+# from models.persistence_model import Persistence_Model
+from models.smart_day_persistence import sPersistence_Forecast
 from data_provider.data_loader import return_cs
 import os
 import pandas as pd
-def train():
+def train(Seed=0):
 
     if _LOG_NEPTUNE:
         import neptune
@@ -39,7 +40,7 @@ def train():
         run = None
 
     # pytorch random seed
-    torch.manual_seed(params['random_seed'])
+    torch.manual_seed(Seed)
 
     if _LOG_NEPTUNE:
         run['parameters'] = stringify_unsupported(params) # neptune only supports float and string
@@ -92,11 +93,15 @@ def train():
         run['model_summary'] = str(model)
 
     criterion = SQR_loss(type=params['loss'], lambda_=params['loss_calibration_lambda'], scale_sharpness=params['loss_calibration_scale_sharpness'])
+    persistence = sPersistence_Forecast(Normalizer,params)
+
     metric = Metrics(params,Normalizer,_DATA_DESCRIPTION)
     metric_plots = MetricPlots(params,Normalizer,sample_size=params["valid_plots_sample_size"],log_neptune=_LOG_NEPTUNE)
     optimizer = build_optimizer(params, model)
-
-    persistence = Persistence_Model(Normalizer,params)
+    
+    num_params = sum(p.numel() for p in model.parameters())
+    print(f"Number of model parameters: {num_params}")
+    
     model = train_model(params = params,
                     model = model,
                     optimizer = optimizer,
@@ -112,11 +117,14 @@ def train():
                     neptune_run=  run,
                     overall_time = overall_time,
                     persistence = persistence)
-
+    
 
     if _LOG_NEPTUNE:
         run.stop()
 
 if __name__ == "__main__":
-    train()
-
+    for number,seed in enumerate(params['random_seed'],start=1):
+        model = train(Seed=seed)
+        model_name = f"models_save/{number}_{params['input_model']}-{params['output_model']}_test.pt"
+        if params['model_save']:
+            torch.save(model,model_name)

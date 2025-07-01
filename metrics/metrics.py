@@ -121,7 +121,7 @@ def PINAW(pred, truth, intervals=[0.2, 0.5, 0.9], quantiles=None, return_counts=
                 _arrary_scores.append(avg_w.item() / 1.0) # instead of range_samples.item())
                 _items.append(np.round(interval_i.item(), 5))
             else: 
-                _scores[np.round(interval_i.item(), 5)] = avg_w.item() / range_samples.item()
+                _scores[np.round(interval_i.item(), 5)] = avg_w.item() / 1.0 #range_samples.item()
     if return_array:
         return _arrary_scores, _items
     return _scores
@@ -412,7 +412,8 @@ class Metrics():
             raise ValueError("Metrics: Unknown input model type")  
         self.normalizer = normalizer 
         self.quantile_dim = params['metrics_quantile_dim'] 
-
+        # self.persistence = persistence
+        # assert persistence is not None if self.metrics.count('SS') > 0 else True, "Metrics: Skill score requires persistence model"
         self.cs_multiplier = True if self.params["target"] == "CSI" else False
     @torch.no_grad()
     def __call__(self, pred, truth,quantile,cs, metric_dict,q_range,pers=None):
@@ -452,18 +453,12 @@ class Metrics():
             elif metric == 'CORR':
                 results['CORR'].append(CORR(median, truth_denorm).item()) 
             elif metric == 'SS':
-                ss = Skill_score(truth = truth, y = pred[...,int(self.quantile_dim/2)].unsqueeze(-1), p = pers)
-                # if ss.evaluate().item() < -10:
-                #     print("SS:",ss.evaluate().item())
+
+                ss = Skill_score(truth = truth_denorm, y = median, p = pers)
+  
                 results['SS'].append(ss.evaluate().item())
 
-                # rmse_y = torch.sqrt(MSELoss()(median,truth_denorm))
-                # rmse_p = torch.sqrt(MSELoss()(pers,truth_denorm))
-                # results['SS'].append(Skill_score(rmse_y,rmse_p).item())
-                # assert input is not None, "Input (X) is required for skill score's persistence model"
-                # assert 'horizon' in options, "Horizon is required for skill score"
-                # assert 'lookback' in options, "Lookback is required for skill score"
-                # results['skill_score'] = Skill_score(options["horizon"],options["lookback"])(median, truth_denorm,input)
+  
             elif metric == "SS_filt":
                 ss = Skill_score(truth = truth,y = pred[...,int(self.quantile_dim/2)].unsqueeze(-1), p = pers)
                 cut_off = self.params["horizon_size"] // 15
